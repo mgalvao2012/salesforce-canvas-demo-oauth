@@ -1,0 +1,17 @@
+<html>
+	<head>
+		<script
+			type="text/javascript"
+			src="https://mgalvao-250121-276-demo.my.salesforce.com/canvas/sdk/js/63.0/canvas-all.js"
+		></script>
+	</head>
+	<body>
+		<script>
+			try {
+				console.log(self.location.hash);
+				window.opener.Sfdc.canvas.oauth.childWindowUnloadNotification(self.localion.hash);
+			} catch (ignore) {}
+			//self.close();
+		</script>
+	</body>
+</html>

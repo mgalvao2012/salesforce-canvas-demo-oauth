@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canvas Demo </title>
+</head>
+
+<body>
+    <div>
+        <div>
+            <h4>Canvas App Working as Expected, Few Observations</h4>
+            <p>
+                <ul>
+                    <li>OAuth setting needed in Connected App for scope but no use of Callback URL.</li>
+                    <li>Users must be preapproved for signed request, otherwise OAuth flow would be needed.</li> 
+                </ul> 
+            </p> 
+        </div>  
+        <p>
+            <div>
+                <form action="/updateAccount" method="POST">
+                    <label for="fname">Account name:</label><br/>
+                    <input type="hidden" name="recordId" value="<%- recordId -%>" />
+                    <input type="input" name="accountName" value="<%- accountName -%>" />
+                    <input type="submit" value="Submit">
+                </form>
+                <a href="/">hello</a>
+            </div>
+        </p>
+    </div>        
+</body> 
+</html>
