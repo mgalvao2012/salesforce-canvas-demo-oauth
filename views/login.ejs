@@ -11,7 +11,7 @@
 				var uri;
 				if (!Sfdc.canvas.oauth.loggedin()) {
 					uri = Sfdc.canvas.oauth.loginUrl();
-					console.log(uri);
+					console.log("uri " + uri);
 					Sfdc.canvas.oauth.login({
 						uri: uri,
 						params: {
