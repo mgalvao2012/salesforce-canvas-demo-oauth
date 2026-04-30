@@ -42,6 +42,10 @@
 					// Displaying only part of the OAuth token for better formatting.
 					Sfdc.canvas.byId("oauth").innerHTML =
 						Sfdc.canvas.oauth.token().substring(1, 40) + "…";
+					setTimeout(function () {
+						// refresh the page to get a new token if the user is already logged in when the app loads
+						window.location.reload();						
+					}, 2000);
 				}
 				login.onclick = loginHandler;
 			});
