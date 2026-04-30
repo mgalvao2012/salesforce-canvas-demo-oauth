@@ -42,7 +42,10 @@
 					// Displaying only part of the OAuth token for better formatting.
 					Sfdc.canvas.byId("oauth").innerHTML =
 						Sfdc.canvas.oauth.token().substring(1, 40) + "…";
-					account.innerHTML = "Account accessible via REST API";
+					setTimeout(function () {
+						// refresh the page to get a new token if the user is already logged in when the app loads
+						window.location.reload();						
+					}, 2000);
 				}
 				login.onclick = loginHandler;
 			});
@@ -50,6 +53,5 @@
 		<h1 id="header">Canvas OAuth App</h1>
 		<div>access_token = <span id="oauth"></span></div>
 		<div><a id="login" href="#">Login</a><br /></div>
-		<div><a id="account" href="/">Account</a><br /></div>
 	</body>
 </html>
