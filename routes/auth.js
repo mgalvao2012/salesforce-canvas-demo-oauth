@@ -39,6 +39,48 @@ router.get('/login',
   })
 );
 
+router.post('/login-mobile', async function(req, res) {
+  try {
+    const tokenRes = await axios.post('https://' + process.env['AUTH0_DOMAIN'] + '/oauth/token', {
+      grant_type: 'password',
+      username: req.body.email,
+      password: req.body.password,
+      scope: 'openid profile',
+      client_id: process.env['AUTH0_CLIENT_ID'],
+      client_secret: process.env['AUTH0_CLIENT_SECRET'],
+      connection: 'Username-Password-Authentication'
+    });
+
+    const userRes = await axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/userinfo', {
+      headers: { Authorization: 'Bearer ' + tokenRes.data.access_token }
+    });
+
+    const profile = {
+      id: userRes.data.sub,
+      username: userRes.data.nickname || userRes.data.name,
+      displayName: userRes.data.name
+    };
+
+    req.logIn({ id: profile.id, username: profile.username, name: profile.displayName }, function(err) {
+      if (err) {
+        console.log('/login-mobile - logIn error: ' + err);
+        return res.render('login', { error: 'Login failed. Please try again.' });
+      }
+      db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
+        [global.envelope.userId, profile.id], function(err) {
+          if (err) console.log('/login-mobile - db error: ' + err);
+        });
+      res.redirect('/');
+    });
+  } catch (err) {
+    const msg = err.response && err.response.data && err.response.data.error_description
+      ? err.response.data.error_description
+      : 'Invalid email or password';
+    console.log('/login-mobile - auth error: ' + msg);
+    res.render('login', { error: msg });
+  }
+});
+
 router.get('/callback', passport.authenticate('openidconnect', {
   successRedirect: '/auth-success',
   failureRedirect: '/login'

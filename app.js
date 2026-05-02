@@ -10,6 +10,8 @@ var session = require('express-session');
 var csrf = require('csurf');
 var passport = require('passport');
 var logger = require('morgan');
+const https = require('https');
+const fs    = require('fs');
 
 // pass the session to the connect sqlite3 module
 // allowing it to inherit from session.Store
@@ -20,7 +22,11 @@ var indexRouter = require('./routes/index');
 var authRouter = require('./routes/auth');
 
 var app = express();
-app.set('trust proxy', 1); // trust X-Forwarded-Proto from ngrok/Heroku so secure cookies work
+
+// Heroku requires secure cookies, but we can only set that if we're actually running on Heroku (or another environment with a similar requirement)
+if (process.env.DYNO) {
+  app.set('trust proxy', 1);
+}
 var crypto = require("crypto");
 const consumerSecretApp = process.env.CANVAS_CONSUMER_SECRET;
 const PORT = process.env.PORT;
@@ -141,6 +147,16 @@ app.use(function(req, res, next) {
   next();
 });
 
-app.listen(PORT, function () {
-	console.log("server is listening!!!");
-});
+if (process.env.LOCAL_HTTPS === 'true') {
+  const sslOptions = {
+    key:  fs.readFileSync('./certs/localhost-key.pem'),
+    cert: fs.readFileSync('./certs/localhost.pem'),
+  };
+  https.createServer(sslOptions, app).listen(PORT, () => {
+    console.log(`Server listening on https://localhost:${PORT}`);
+  });
+} else {
+  app.listen(PORT, () => {
+    console.log(`Server listening on http://localhost:${PORT}`);
+  });
+}
