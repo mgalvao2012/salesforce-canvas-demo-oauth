@@ -67,6 +67,9 @@ app.use(function(req, res, next) {
   const ua = req.headers['user-agent'];
   res.locals.isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
   res.locals.userAgent = ua;
+  res.locals.clientId = process.env.AUTH0_CLIENT_ID;
+  res.locals.domain = process.env.AUTH0_DOMAIN;
+  res.locals.callbackUrl = process.env.URL + '/callback';
   console.log('User-Agent: ' + ua);
   console.log('isMobile: ' + res.locals.isMobile);
   next();
@@ -105,11 +108,7 @@ app.post("/", async function (req, res) {
 			console.log('app - db get userId: ' + userId);
 			if (!userId) {
 				// userId is not in the database, so we need to go through the authentication flow to get it and store it
-				res.render('login', {
-					clientId: process.env.AUTH0_CLIENT_ID,
-					domain: process.env.AUTH0_DOMAIN,
-					callbackUrl: process.env.URL + '/callback'
-				});
+				res.render('login');
 			} else {
 				// userId is already in the database, so we can skip authentication and go straight to the app
 				res.render('auth-success');
