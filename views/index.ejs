@@ -20,13 +20,14 @@
         <p>
             <div>
                 <form action="/updateAccount" method="POST">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <label for="fname">Account name:</label><br/>
                     <input type="hidden" name="recordId" value="<%- recordId -%>" />
                     <input type="input" name="accountName" value="<%- accountName -%>" />
                     <input type="submit" value="Submit">
-                </form>
-                <a href="/">logout</a>
+                </form>                
             </div>
+            <div><a id="logout" href="/logout">Logout</a><br /></div>
         </p>
     </div>        
 </body> 

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+  if (window.opener) {
+    window.opener.postMessage('auth0-success', '*');
+    window.close();
+  } else {
+    window.location.href = '/';
+  }
+</script>
+</body>
+</html>
