@@ -1,8 +1,6 @@
 <html>
 	<head>
-		<% if (isMobile) { %>
-		<script src="https://cdn.auth0.com/js/lock/12/auth0-lock.min.js"></script>
-		<% } else { %>
+		<% if (!isMobile) { %>
 		<script
 			type="text/javascript"
 			src="https://mgalvao-250321-998-demo.my.salesforce.com/canvas/sdk/js/66.0/canvas-all.js"
@@ -13,20 +11,51 @@
 		<h1 id="header">Canvas OAuth App</h1>
 
 		<% if (isMobile) { %>
-		<div id="lock-container"></div>
+		<script src="auth0.min.js"></script>
+
+		<style>
+			#login-form { display:flex; flex-direction:column; gap:12px; max-width:320px; margin:40px auto; }
+			#login-form input { padding:10px; font-size:16px; border:1px solid #ccc; border-radius:4px; }
+			#login-form button { padding:12px; font-size:16px; background:#635dff; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+			#login-error { color:red; font-size:14px; display:none; }
+		</style>
+
+		<form id="login-form" onsubmit="handleLogin(event)">
+			<h2>Sign in</h2>
+			<input type="email" id="email" placeholder="Email" required />
+			<input type="password" id="password" placeholder="Password" required />
+			<div id="login-error"></div>
+			<button type="submit">Login</button>
+		</form>
+
 		<script>
-			var lock = new Auth0Lock('<%= clientId %>', '<%= domain %>', {
-				container: 'lock-container',
-				auth: {
-					redirectUrl: '<%= callbackUrl %>',
-					responseType: 'code',
-					params: { scope: 'openid profile' }
-				},
-				allowSignUp: false
+			var webAuth = new auth0.WebAuth({
+				domain: '<%= domain %>',
+				clientID: '<%= clientId %>',
+				redirectUri: '<%= callbackUrl %>',
+				responseType: 'code',
+				scope: 'openid profile'
 			});
-			lock.show();
+
+			function handleLogin(e) {
+				e.preventDefault();
+				var errEl = document.getElementById('login-error');
+				errEl.style.display = 'none';
+				webAuth.login({
+					realm: 'Username-Password-Authentication',
+					username: document.getElementById('email').value,
+					password: document.getElementById('password').value
+				}, function(err) {
+					if (err) {
+						errEl.textContent = err.description || 'Login failed';
+						errEl.style.display = 'block';
+					}
+				});
+			}
 		</script>
+
 		<% } else { %>
+
 		<div>access_token = <span id="oauth"></span></div>
 		<div><a id="loginAuth0" href="#" onclick="window.open('/login','auth0login','width=600,height=700'); return false;">Login Auth0</a><br /></div>
 		<script>
@@ -36,6 +65,7 @@
 				}
 			});
 		</script>
+
 		<% } %>
 	</body>
 </html>
