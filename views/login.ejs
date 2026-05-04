@@ -20,6 +20,9 @@
 
 		<form id="login-form" action="/login-mobile" method="POST">
 			<h2>Sign in</h2>
+			<% if (typeof signedRequest !== 'undefined' && signedRequest) { %>
+			<input type="hidden" name="signed_request" value="<%= signedRequest %>" />
+			<% } %>
 			<input type="email" name="email" placeholder="Email" required />
 			<input type="password" name="password" placeholder="Password" required />
  			<% if (typeof error !== 'undefined' && error) { %>

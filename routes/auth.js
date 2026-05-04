@@ -1,4 +1,5 @@
 var qs = require('querystring');
+var crypto = require('crypto');
 var express = require('express');
 var passport = require('passport');
 var OpenIDConnectStrategy = require('passport-openidconnect');
@@ -40,6 +41,30 @@ router.get('/login',
 );
 
 router.post('/login-mobile', async function(req, res) {
+  // Decode the Canvas envelope from the signed_request posted by the login form.
+  // We cannot rely on the session here: the initial Canvas POST "/" is made by
+  // Salesforce infrastructure (not the browser), so its Set-Cookie never reaches
+  // the WKWebView cookie jar. The envelope travels via the hidden form field instead.
+  let envelope = null;
+  if (req.body.signed_request) {
+    try {
+      const bodyArray = req.body.signed_request.split('.');
+      const consumerSecret = bodyArray[0];
+      const encoded_envelope = bodyArray[1];
+      const check = crypto
+        .createHmac('sha256', process.env.CANVAS_CONSUMER_SECRET)
+        .update(encoded_envelope)
+        .digest('base64');
+      if (check === consumerSecret) {
+        envelope = JSON.parse(Buffer.from(encoded_envelope, 'base64').toString('ascii'));
+      } else {
+        console.log('/login-mobile - signed_request HMAC mismatch');
+      }
+    } catch (e) {
+      console.log('/login-mobile - signed_request decode error: ' + e);
+    }
+  }
+
   try {
     const tokenRes = await axios.post('https://' + process.env['AUTH0_DOMAIN'] + '/oauth/token', {
       grant_type: 'password',
@@ -61,10 +86,9 @@ router.post('/login-mobile', async function(req, res) {
       displayName: userRes.data.name
     };
 
-    // Set passport user directly on the existing session without calling req.logIn(),
-    // because req.logIn() calls req.session.regenerate() which changes the session ID.
-    // Salesforce Mobile WKWebView discards Set-Cookie headers on 302 redirects, so the
-    // new session ID never reaches the client and the envelope is lost.
+    if (envelope) {
+      req.session.envelope = envelope;
+    }
     req.session.passport = { user: { id: profile.id, username: profile.username, name: profile.displayName } };
     req.session.save(function(saveErr) {
       if (saveErr) console.log('/login-mobile - session save error: ' + saveErr);
@@ -80,7 +104,7 @@ router.post('/login-mobile', async function(req, res) {
       ? err.response.data.error_description
       : 'Invalid email or password';
     console.log('/login-mobile - auth error: ' + msg);
-    res.render('login', { error: msg });
+    res.render('login', { error: msg, signedRequest: req.body.signed_request });
   }
 });
 

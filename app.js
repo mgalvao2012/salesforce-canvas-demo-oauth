@@ -109,7 +109,7 @@ app.post("/", async function (req, res) {
 			console.log('app - db get userId: ' + userId);
 			if (!userId) {
 				// userId is not in the database, so we need to go through the authentication flow to get it and store it
-				res.render('login');
+				res.render('login', { signedRequest: req.body.signed_request });
 			} else {
 				// userId is already in the database, so we can skip authentication and go straight to the app
 				res.render('auth-success');
