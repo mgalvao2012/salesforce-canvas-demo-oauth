@@ -58,24 +58,31 @@ router.post('/login-mobile', async function(req, res) {
   // We cannot rely on the session here: the initial Canvas POST "/" is made by
   // Salesforce infrastructure (not the browser), so its Set-Cookie never reaches
   // the WKWebView cookie jar. The envelope travels via the hidden form field instead.
+  console.log('/login-mobile - signed_request present: ' + !!req.body.signed_request);
+  console.log('/login-mobile - signed_request length: ' + (req.body.signed_request ? req.body.signed_request.length : 0));
   let envelope = null;
   if (req.body.signed_request) {
     try {
       const bodyArray = req.body.signed_request.split('.');
       const consumerSecret = bodyArray[0];
       const encoded_envelope = bodyArray[1];
+      console.log('/login-mobile - CANVAS_CONSUMER_SECRET set: ' + !!process.env.CANVAS_CONSUMER_SECRET);
       const check = crypto
         .createHmac('sha256', process.env.CANVAS_CONSUMER_SECRET)
         .update(encoded_envelope)
         .digest('base64');
+      console.log('/login-mobile - HMAC match: ' + (check === consumerSecret));
       if (check === consumerSecret) {
         envelope = JSON.parse(Buffer.from(encoded_envelope, 'base64').toString('ascii'));
+        console.log('/login-mobile - envelope decoded, user email: ' + envelope?.context?.user?.email);
       } else {
         console.log('/login-mobile - signed_request HMAC mismatch');
       }
     } catch (e) {
       console.log('/login-mobile - signed_request decode error: ' + e);
     }
+  } else {
+    console.log('/login-mobile - no signed_request in body, keys: ' + Object.keys(req.body).join(', '));
   }
 
   try {
