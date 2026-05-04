@@ -22,7 +22,8 @@
 			<h2>Sign in</h2>
 			<input type="email" name="email" placeholder="Email" required />
 			<input type="password" name="password" placeholder="Password" required />
-			<% if (typeof error !== 'undefined' && error) { %>
+			<input type="hidden" name="envelope" value="<%= envelope %>" />
+ 			<% if (typeof error !== 'undefined' && error) { %>
 			<div id="login-error"><%= error %></div>
 			<% } %>
 			<button type="submit">Login</button>

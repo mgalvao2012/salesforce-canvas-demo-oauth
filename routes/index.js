@@ -32,7 +32,10 @@ async function getAccountName(recordId, envelope) {
 /* GET home page. */
 router.get('/', function(req, res, next) {
   console.log('/ - req.session: ' + JSON.stringify(req.session));
-  const envelope = req.session.envelope;
+  console.log('/ - req.body.envelope: ' + JSON.stringify(req.body.envelope));
+  // In some cases, the envelope may not be in the session (e.g. after logging out and back in), so we also check req.body for the envelope
+  // This is a workaround and ideally the envelope should always be stored in the session after login, but this ensures we can still access it if it's not there for some reason. We may want to investigate why the envelope is sometimes missing from the session and fix that underlying issue as well.
+  const envelope = req.session.envelope || req.body.envelope; // 
   if (!envelope || !envelope.context || !envelope.context.user || !envelope.context.user.email) {
     console.log('User email is not available in the envelope. Redirecting to login page.');
     res.render('login');

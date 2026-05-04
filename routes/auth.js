@@ -73,7 +73,7 @@ router.post('/login-mobile', async function(req, res) {
         [req.body.email, profile.id], function(err) {
           if (err) console.log('/login-mobile - db error: ' + err);
         });
-      res.redirect('/');
+      res.redirect('/', { envelope: req.body.envelope });
     });
   } catch (err) {
     const msg = err.response && err.response.data && err.response.data.error_description
