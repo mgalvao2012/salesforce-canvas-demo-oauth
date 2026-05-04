@@ -3,8 +3,21 @@ var crypto = require('crypto');
 var express = require('express');
 var passport = require('passport');
 var OpenIDConnectStrategy = require('passport-openidconnect');
+var csrf = require('csurf');
 var db = require('../db');
 var axios = require("axios").default;
+
+var csrfProtection = csrf({ cookie: true });
+
+async function getAccountName(recordId, envelope) {
+  const url = `${envelope.client.instanceUrl}${envelope.context.links.sobjectUrl}Account/${recordId}?fields=Name`;
+  const headers = {
+    Authorization: `Bearer ${envelope.client.oauthToken}`,
+    'Content-Type': 'application/json',
+  };
+  const response = await axios.get(url, { headers });
+  return response.data.Name;
+}
 
 passport.use(new OpenIDConnectStrategy({
   issuer: 'https://' + process.env['AUTH0_DOMAIN'] + '/',
@@ -86,18 +99,34 @@ router.post('/login-mobile', async function(req, res) {
       displayName: userRes.data.name
     };
 
-    if (envelope) {
-      req.session.envelope = envelope;
-    }
-    req.session.passport = { user: { id: profile.id, username: profile.username, name: profile.displayName } };
-    req.session.save(function(saveErr) {
-      if (saveErr) console.log('/login-mobile - session save error: ' + saveErr);
+    db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
+      [req.body.email, profile.id], function(err) {
+        if (err) console.log('/login-mobile - db error: ' + err);
+      });
 
-      db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-        [req.body.email, profile.id], function(err) {
-          if (err) console.log('/login-mobile - db error: ' + err);
+    if (!envelope) {
+      console.log('/login-mobile - no envelope, cannot render app');
+      return res.render('login', { error: 'Session expired. Please reload the app.', signedRequest: req.body.signed_request });
+    }
+
+    // Render the app directly — no redirect needed.
+    // The Salesforce Mobile WKWebView does not maintain session cookies across requests,
+    // so we never redirect through GET "/" for the mobile flow.
+    csrfProtection(req, res, async function() {
+      try {
+        const recordId = envelope.context.environment.record.Id;
+        const accountName = await getAccountName(recordId, envelope);
+        res.render('index', {
+          recordId,
+          accountName,
+          signedRequestJson: envelope,
+          signedRequest: req.body.signed_request,
+          csrfToken: req.csrfToken(),
         });
-      res.redirect('/');
+      } catch (renderErr) {
+        console.log('/login-mobile - render error: ' + renderErr);
+        res.render('login', { error: 'Login succeeded but failed to load app.', signedRequest: req.body.signed_request });
+      }
     });
   } catch (err) {
     const msg = err.response && err.response.data && err.response.data.error_description

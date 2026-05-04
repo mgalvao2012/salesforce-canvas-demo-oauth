@@ -1,7 +1,8 @@
 var express = require('express');
+var crypto = require('crypto');
 var axios = require("axios").default;
 var csrf = require('csurf');
-var csrfProtection = csrf();
+var csrfProtection = csrf({ cookie: true });
 var ensureLogIn = require('connect-ensure-login').ensureLoggedIn;
 var db = require('../db');
 
@@ -59,7 +60,24 @@ router.get('/', function(req, res, next) {
 router.post("/updateAccount", async function (req, res) {
   let recordId = req.body.recordId;
   let accountName = req.body.accountName;
-  const envelope = req.session.envelope;
+  let envelope = req.session.envelope;
+
+  // Mobile Canvas flow: session cookie not maintained by WKWebView,
+  // re-decode envelope from signed_request carried in the form body.
+  if (!envelope && req.body.signed_request) {
+    try {
+      const parts = req.body.signed_request.split('.');
+      const check = crypto
+        .createHmac('sha256', process.env.CANVAS_CONSUMER_SECRET)
+        .update(parts[1])
+        .digest('base64');
+      if (check === parts[0]) {
+        envelope = JSON.parse(Buffer.from(parts[1], 'base64').toString('ascii'));
+      }
+    } catch (e) {
+      console.log('/updateAccount - signed_request decode error: ' + e);
+    }
+  }
   let instanceUrl = envelope.client.instanceUrl;
   let sobjectUrl = envelope.context.links.sobjectUrl;
   let oauthToken = envelope.client.oauthToken;

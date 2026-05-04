@@ -21,8 +21,11 @@
             <div>
                 <form action="/updateAccount" method="POST">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                    <label for="fname">Account name:</label><br/>
                     <input type="hidden" name="recordId" value="<%- recordId -%>" />
+                    <% if (typeof signedRequest !== 'undefined' && signedRequest) { %>
+                    <input type="hidden" name="signed_request" value="<%= signedRequest %>" />
+                    <% } %>
+                    <label for="fname">Account name:</label><br/>
                     <input type="input" name="accountName" value="<%- accountName -%>" />
                     <input type="submit" value="Submit">
                 </form>                

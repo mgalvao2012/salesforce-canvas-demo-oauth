@@ -53,7 +53,7 @@ app.use(session({
     secure: true      // required with sameSite=none; works via ngrok/Heroku (trust proxy above)
   }
 }));
-var csrfProtection = csrf();
+var csrfProtection = csrf({ cookie: true });
 app.use(passport.initialize());
 app.use(passport.authenticate('session'));
 app.use(function(req, res, next) {
