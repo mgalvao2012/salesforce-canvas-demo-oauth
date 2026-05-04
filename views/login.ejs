@@ -22,7 +22,7 @@
 			<h2>Sign in</h2>
 			<input type="email" name="email" placeholder="Email" required />
 			<input type="password" name="password" placeholder="Password" required />
-			<input type="hidden" name="envelope" value="<%= envelope %>" />
+			<input type="text" name="envelope" value="<%= envelope %>" />
  			<% if (typeof error !== 'undefined' && error) { %>
 			<div id="login-error"><%= error %></div>
 			<% } %>
