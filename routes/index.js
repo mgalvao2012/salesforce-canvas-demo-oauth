@@ -32,7 +32,7 @@ async function getAccountName(recordId, envelope) {
 /* GET home page. */
 router.get('/', function(req, res, next) {
   const envelope = req.session.envelope;
-  if (!envelope.context || !envelope.context.user || !envelope.context.user.email) {
+  if (!envelope || !envelope.context || !envelope.context.user || !envelope.context.user.email) {
     console.log('User email is not available in the envelope. Redirecting to login page.');
     res.render('login');
     return;
