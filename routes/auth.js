@@ -66,8 +66,12 @@ router.post('/login-mobile', async function(req, res) {
         console.log('/login-mobile - logIn error: ' + err);
         return res.render('login', { error: 'Login failed. Please try again.' });
       }
+      
+      console.log('/login-mobile - req.session: ' + JSON.stringify(req.session));
+      console.log('/login-mobile - req.session.envelope: ' + JSON.stringify(req.session.envelope));
+
       db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-        [req.session.envelope.context.user.email, profile.id], function(err) {
+        [req.body.email, profile.id], function(err) {
           if (err) console.log('/login-mobile - db error: ' + err);
         });
       res.redirect('/');
