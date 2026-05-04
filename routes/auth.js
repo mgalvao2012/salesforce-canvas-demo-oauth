@@ -67,7 +67,7 @@ router.post('/login-mobile', async function(req, res) {
         return res.render('login', { error: 'Login failed. Please try again.' });
       }
       db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-        [global.envelope.userId, profile.id], function(err) {
+        [req.session.envelope.userId, profile.id], function(err) {
           if (err) console.log('/login-mobile - db error: ' + err);
         });
       res.redirect('/');
@@ -88,10 +88,10 @@ router.get('/callback', passport.authenticate('openidconnect', {
 
 router.get('/auth-success', function(req, res) {
   console.log('/auth-success - req.session.userId: ' + req.session.userId);
-  console.log('/auth-success - global.envelope.userId: ' + global.envelope.userId);
+  console.log('/auth-success - req.session.envelope.userId: ' + req.session.envelope.userId);
 
   db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-    [global.envelope.userId, req.session.passport.user.id], function(err) {
+    [req.session.envelope.userId, req.session.passport.user.id], function(err) {
       if (err) {
         console.log('Error storing userId in database: ' + err);
       }
@@ -102,8 +102,8 @@ router.get('/auth-success', function(req, res) {
 
 router.get('/logout', function(req, res, next) {
   console.log('/logout - req.session.userId: ' + req.session.userId);
-  console.log('/logout - global.envelope.userId: ' + global.envelope.userId);
-  db.run(`DELETE FROM store WHERE key = ?`, [global.envelope.userId], function(err) {
+  console.log('/logout - req.session.envelope.userId: ' + req.session.envelope.userId);
+  db.run(`DELETE FROM store WHERE key = ?`, [req.session.envelope.userId], function(err) {
     if (err) {
       console.log('Error deleting userId from database: ' + err);
     }
