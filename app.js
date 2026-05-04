@@ -105,14 +105,13 @@ app.post("/", async function (req, res) {
 		console.log("req.session.envelope:", req.session.envelope);
 
 		db.get(`SELECT value FROM store WHERE key = ?`, [req.session.envelope.context.user.email], (err, row) => {
-			console.log('app - db get error: ' + err);
-			const email = row ? row.value : null;
-			console.log('app - db get email: ' + email);
-			if (!email) {
-				// email is not in the database, so we need to go through the authentication flow to get it and store it
+			const userId = row ? row.value : null;
+			console.log('app - db get userId: ' + userId);
+			if (!userId) {
+				// userId is not in the database, so we need to go through the authentication flow to get it and store it
 				res.render('login');
 			} else {
-				// email is already in the database, so we can skip authentication and go straight to the app
+				// userId is already in the database, so we can skip authentication and go straight to the app
 				res.render('auth-success');
 			}
 		});		

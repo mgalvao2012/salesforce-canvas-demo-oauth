@@ -66,7 +66,6 @@ router.post('/login-mobile', async function(req, res) {
         console.log('/login-mobile - logIn error: ' + err);
         return res.render('login', { error: 'Login failed. Please try again.' });
       }
-      
       console.log('/login-mobile - req.session: ' + JSON.stringify(req.session));
       console.log('/login-mobile - req.session.envelope: ' + JSON.stringify(req.session.envelope));
 
