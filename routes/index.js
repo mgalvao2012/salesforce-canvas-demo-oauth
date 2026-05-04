@@ -32,6 +32,11 @@ async function getAccountName(recordId, envelope) {
 /* GET home page. */
 router.get('/', function(req, res, next) {
   const envelope = req.session.envelope;
+  if (!envelope) {
+    console.log('envelope is not available. Redirecting to home page.');
+    res.render('home');
+    return;
+  }
   console.log('req.session.envelope.userId: ' + envelope.userId);
 
   db.get(`SELECT value FROM store WHERE key = ?`, [envelope.userId], (err, row) => {
@@ -40,18 +45,19 @@ router.get('/', function(req, res, next) {
     console.log('db get userId: ' + userId);
 
     if (!userId) {
-      return res.render('login');
+      res.render('login');
+      return;
     }
     res.locals.filter = null;
 
     csrfProtection(req, res, async function() {
-			res.render("index", {
-				recordId: envelope.context.environment.record.Id,
-				accountName: await getAccountName(envelope.context.environment.record.Id, envelope),
-				signedRequestJson: envelope,
-				csrfToken: req.csrfToken(),
-			});
-		});
+      res.render("index", {
+        recordId: envelope.context.environment.record.Id,
+        accountName: await getAccountName(envelope.context.environment.record.Id, envelope),
+        signedRequestJson: envelope,
+        csrfToken: req.csrfToken(),
+      });
+    });
   });
 });
 
