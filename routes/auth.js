@@ -61,25 +61,19 @@ router.post('/login-mobile', async function(req, res) {
       displayName: userRes.data.name
     };
 
-    const savedEnvelope = req.session.envelope;
+    // Set passport user directly on the existing session without calling req.logIn(),
+    // because req.logIn() calls req.session.regenerate() which changes the session ID.
+    // Salesforce Mobile WKWebView discards Set-Cookie headers on 302 redirects, so the
+    // new session ID never reaches the client and the envelope is lost.
+    req.session.passport = { user: { id: profile.id, username: profile.username, name: profile.displayName } };
+    req.session.save(function(saveErr) {
+      if (saveErr) console.log('/login-mobile - session save error: ' + saveErr);
 
-    req.logIn({ id: profile.id, username: profile.username, name: profile.displayName }, function(err) {
-      if (err) {
-        console.log('/login-mobile - logIn error: ' + err);
-        return res.render('login', { error: 'Login failed. Please try again.' });
-      }
-
-      // After successful login, we need to restore the envelope in the session if it was there before, since logging in may have cleared it. This ensures that we can still access the envelope data after logging in, which is necessary for the app to function properly. --- IGNORE ---
-      req.session.envelope = savedEnvelope;
-      req.session.save(function(saveErr) {
-        if (saveErr) console.log('/login-mobile - session save error: ' + saveErr);
-
-        db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-          [req.body.email, profile.id], function(err) {
-            if (err) console.log('/login-mobile - db error: ' + err);
-          });
-        res.redirect('/');
-      });
+      db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
+        [req.body.email, profile.id], function(err) {
+          if (err) console.log('/login-mobile - db error: ' + err);
+        });
+      res.redirect('/');
     });
   } catch (err) {
     const msg = err.response && err.response.data && err.response.data.error_description
