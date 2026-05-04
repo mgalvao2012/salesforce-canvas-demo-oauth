@@ -67,8 +67,7 @@ router.post('/login-mobile', async function(req, res) {
         return res.render('login', { error: 'Login failed. Please try again.' });
       }
       db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-        //[req.session.envelope.userId, profile.id], function(err) {
-        [global.envelope.userId, profile.id], function(err) {
+        [req.session.envelope.context.user.email, profile.id], function(err) {
           if (err) console.log('/login-mobile - db error: ' + err);
         });
       res.redirect('/');
@@ -88,11 +87,11 @@ router.get('/callback', passport.authenticate('openidconnect', {
 }));
 
 router.get('/auth-success', function(req, res) {
+  console.log('/auth-success - req.session: ' + JSON.stringify(req.session));
   db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-    //[req.session.envelope.userId, req.session.passport.user.id], function(err) {
-    [global.envelope.userId, req.session.passport.user.id], function(err) {
+    [req.session.envelope.context.user.email, req.session.passport.user.id], function(err) {
       if (err) {
-        console.log('Error storing userId in database: ' + err);
+        console.log('Error storing email in database: ' + err);
       }
     });
 
@@ -100,11 +99,13 @@ router.get('/auth-success', function(req, res) {
 });
 
 router.get('/logout', function(req, res, next) {
-  db.run(`DELETE FROM store WHERE key = ?`, [req.session.envelope.userId], function(err) {
+  /*
+  db.run(`DELETE FROM store WHERE key = ?`, [req.session.envelope.context.user.email, function(err) {
     if (err) {
-      console.log('Error deleting userId from database: ' + err);
+      console.log('Error deleting email from database: ' + err);
     }
   });
+  */
   // Log out of Auth0 as well by calling the logout endpoint with the appropriate parameters
   axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
     .then(() => {

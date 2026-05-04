@@ -31,8 +31,6 @@ var crypto = require("crypto");
 const consumerSecretApp = process.env.CANVAS_CONSUMER_SECRET;
 const PORT = process.env.PORT;
 
-global.envelope = ""; // salesforce instance information
-
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set("view engine", "ejs");
@@ -103,24 +101,18 @@ app.post("/", async function (req, res) {
 		const envelope = JSON.parse(Buffer.from(encoded_envelope, "base64").toString("ascii"));
 		console.log("got the session object:");
 		console.log(req.body.signed_request);
-    global.envelope = envelope;
-		console.log("global.envelope:", global.envelope);
+		req.session.envelope = envelope;
+		console.log("req.session.envelope:", req.session.envelope);
 
-		//req.session.envelope = envelope;
-		//console.log("req.session.envelope:");
-		//console.log(req.session.envelope);
-		//res.render("login");
-
-		//db.get(`SELECT value FROM store WHERE key = ?`, [req.session.envelope.userId], (err, row) => {
-    db.get(`SELECT value FROM store WHERE key = ?`, [envelope.userId], (err, row) => {
+		db.get(`SELECT value FROM store WHERE key = ?`, [req.session.envelope.context.user.email], (err, row) => {
 			console.log('app - db get error: ' + err);
-			const userId = row ? row.value : null;
-			console.log('app - db get userId: ' + userId);
-			if (!userId) {
-				// userId is not in the database, so we need to go through the authentication flow to get it and store it
+			const email = row ? row.value : null;
+			console.log('app - db get email: ' + email);
+			if (!email) {
+				// email is not in the database, so we need to go through the authentication flow to get it and store it
 				res.render('login');
 			} else {
-				// userId is already in the database, so we can skip authentication and go straight to the app
+				// email is already in the database, so we can skip authentication and go straight to the app
 				res.render('auth-success');
 			}
 		});		
