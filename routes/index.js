@@ -9,10 +9,14 @@ var ensureLoggedIn = ensureLogIn();
 var app = express();
 var router = express.Router();
 
-async function getAccountName(recordId, envelope) {
-  let instanceUrl = envelope.client.instanceUrl;
-  let sobjectUrl = envelope.context.links.sobjectUrl;
-  let oauthToken = envelope.client.oauthToken;
+async function getAccountName(recordId) {
+  async function getAccountName(recordId, envelope) {
+  let instanceUrl = global.envelope.client.instanceUrl;
+  let sobjectUrl = global.envelope.context.links.sobjectUrl;
+  let oauthToken = global.envelope.client.oauthToken;
+  //let instanceUrl = envelope.client.instanceUrl;
+  //let sobjectUrl = envelope.context.links.sobjectUrl;
+  //let oauthToken = envelope.client.oauthToken;
   const url = `${instanceUrl}${sobjectUrl}Account/${recordId}?fields=Name`;
   const headers = {
     Authorization: `Bearer ${oauthToken}`,
@@ -31,7 +35,9 @@ async function getAccountName(recordId, envelope) {
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
-  const envelope = req.session.envelope;
+  console.log('global.envelope.userId: ' + global.envelope.userId);
+  //const envelope = req.session.envelope;
+  const envelope = global.envelope;
   if (!envelope) {
     console.log('envelope is not available. Redirecting to login page.');
     res.render('login');
@@ -39,7 +45,8 @@ router.get('/', function(req, res, next) {
   }
   console.log('req.session.envelope.userId: ' + envelope.userId);
 
-  db.get(`SELECT value FROM store WHERE key = ?`, [envelope.userId], (err, row) => {
+  db.get(`SELECT value FROM store WHERE key = ?`, [global.envelope.userId], (err, row) => {
+  //db.get(`SELECT value FROM store WHERE key = ?`, [envelope.userId], (err, row) => {
     console.log('db get error: ' + err);
     const userId = row ? row.value : null;
     console.log('db get userId: ' + userId);
@@ -52,9 +59,12 @@ router.get('/', function(req, res, next) {
 
     csrfProtection(req, res, async function() {
       res.render("index", {
-        recordId: envelope.context.environment.record.Id,
-        accountName: await getAccountName(envelope.context.environment.record.Id, envelope),
-        signedRequestJson: envelope,
+        recordId: global.envelope.context.environment.record.Id,
+				accountName: await getAccountName(global.envelope.context.environment.record.Id),
+				signedRequestJson: global.envelope,
+        //recordId: envelope.context.environment.record.Id,
+        //accountName: await getAccountName(envelope.context.environment.record.Id, envelope),
+        //signedRequestJson: envelope,
         csrfToken: req.csrfToken(),
       });
     });
@@ -64,10 +74,13 @@ router.get('/', function(req, res, next) {
 router.post("/updateAccount", async function (req, res) {
   let recordId = req.body.recordId;
   let accountName = req.body.accountName;
-  const envelope = req.session.envelope;
-  let instanceUrl = envelope.client.instanceUrl;
-  let sobjectUrl = envelope.context.links.sobjectUrl;
-  let oauthToken = envelope.client.oauthToken;
+  let instanceUrl = global.envelope.client.instanceUrl;
+  let sobjectUrl = global.envelope.context.links.sobjectUrl;
+  let oauthToken = global.envelope.client.oauthToken;
+  //const envelope = req.session.envelope;
+  //let instanceUrl = envelope.client.instanceUrl;
+  //let sobjectUrl = envelope.context.links.sobjectUrl;
+  //let oauthToken = envelope.client.oauthToken;
   const url = `${instanceUrl}${sobjectUrl}Account/${recordId}`;
   const headers = {
     Authorization: `Bearer ${oauthToken}`,
