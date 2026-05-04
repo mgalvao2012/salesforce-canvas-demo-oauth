@@ -61,19 +61,25 @@ router.post('/login-mobile', async function(req, res) {
       displayName: userRes.data.name
     };
 
+    const savedEnvelope = req.session.envelope;
+
     req.logIn({ id: profile.id, username: profile.username, name: profile.displayName }, function(err) {
       if (err) {
         console.log('/login-mobile - logIn error: ' + err);
         return res.render('login', { error: 'Login failed. Please try again.' });
       }
-      console.log('/login-mobile - req.session: ' + JSON.stringify(req.session));
-      console.log('/login-mobile - req.session.envelope: ' + JSON.stringify(req.session.envelope));
 
-      db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-        [req.body.email, profile.id], function(err) {
-          if (err) console.log('/login-mobile - db error: ' + err);
-        });
-      res.redirect('/', { envelope: req.body.envelope });
+      // After successful login, we need to restore the envelope in the session if it was there before, since logging in may have cleared it. This ensures that we can still access the envelope data after logging in, which is necessary for the app to function properly. --- IGNORE ---
+      req.session.envelope = savedEnvelope;
+      req.session.save(function(saveErr) {
+        if (saveErr) console.log('/login-mobile - session save error: ' + saveErr);
+
+        db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
+          [req.body.email, profile.id], function(err) {
+            if (err) console.log('/login-mobile - db error: ' + err);
+          });
+        res.redirect('/');
+      });
     });
   } catch (err) {
     const msg = err.response && err.response.data && err.response.data.error_description
