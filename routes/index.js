@@ -34,7 +34,7 @@ router.get('/', function(req, res, next) {
   const envelope = req.session.envelope;
   if (!envelope) {
     console.log('envelope is not available. Redirecting to home page.');
-    res.render('home');
+    res.render('login');
     return;
   }
   console.log('req.session.envelope.userId: ' + envelope.userId);

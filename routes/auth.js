@@ -87,9 +87,6 @@ router.get('/callback', passport.authenticate('openidconnect', {
 }));
 
 router.get('/auth-success', function(req, res) {
-  console.log('/auth-success - req.session.userId: ' + req.session.userId);
-  console.log('/auth-success - req.session.envelope.userId: ' + req.session.envelope.userId);
-
   db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
     [req.session.envelope.userId, req.session.passport.user.id], function(err) {
       if (err) {
@@ -101,8 +98,6 @@ router.get('/auth-success', function(req, res) {
 });
 
 router.get('/logout', function(req, res, next) {
-  console.log('/logout - req.session.userId: ' + req.session.userId);
-  console.log('/logout - req.session.envelope.userId: ' + req.session.envelope.userId);
   db.run(`DELETE FROM store WHERE key = ?`, [req.session.envelope.userId], function(err) {
     if (err) {
       console.log('Error deleting userId from database: ' + err);
