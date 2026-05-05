@@ -118,10 +118,6 @@ router.get('/callback', passport.authenticate('openidconnect', {
 }));
 
 router.get('/auth-success', function(req, res) {
-  if (!req.session.envelope) {
-    console.error('/auth-success - no envelope in session');
-    return res.render('home');
-  }
   db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
     [req.session.envelope.context.user.email, req.session.passport.user.id], function(err) {
       if (err) {
