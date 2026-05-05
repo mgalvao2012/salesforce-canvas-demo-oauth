@@ -86,6 +86,7 @@ app.get("/callback_sfdc", function (req, res) {
 });
 
 app.post("/", async function (req, res) {
+	console.log('app POST / - received signed_request: ' + req.body.signed_request);
 	const envelope = decodeSignedRequest(req.body.signed_request, consumerSecretApp);
 
 	if (envelope) {
@@ -96,6 +97,7 @@ app.post("/", async function (req, res) {
 				console.error('app POST / - db error: ' + err);
 				return res.render('login', { signedRequest: req.body.signed_request });
 			}
+			
 			const userId = row ? row.value : null;
 			if (!userId) {
 				res.render('login', { signedRequest: req.body.signed_request });
