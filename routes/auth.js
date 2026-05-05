@@ -149,11 +149,11 @@ router.post('/logout', function(req, res, next) {
   const signedRequest = req.body.signed_request || null;
   axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
     .then(() => {
-      res.render('login', { signedRequest: signed_request });
+      res.render('login', { signedRequest: signedRequest });
     })
     .catch(err => {
       console.error('Error logging out of Auth0: ' + err);
-      res.render('login', { signedRequest: signed_request });
+      res.render('login', { signedRequest: signedRequest });
     });
 });
 
@@ -161,7 +161,7 @@ router.get('/logout', function(req, res, next) {
   const signedRequest = req.body.signed_request || null;
   axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
     .then(() => {
-      res.render('login', { signedRequest: signed_request });
+      res.render('login', { signedRequest: signedRequest });
     })
     .catch(err => {
       console.error('Error logging out of Auth0: ' + err);
