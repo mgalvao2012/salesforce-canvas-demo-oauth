@@ -88,16 +88,17 @@ app.get("/callback_sfdc", function (req, res) {
 app.post("/", async function (req, res) {
 	console.log('app POST / - received signed_request: ' + req.body.signed_request);
 	const envelope = decodeSignedRequest(req.body.signed_request, consumerSecretApp);
-
-	if (envelope) {
+	console.log('app POST / - decoded envelope: ' + JSON.stringify(envelope));
+	
+	if (envelope) {		
 		req.session.envelope = envelope;
-
+		console.log('app POST / - decoded envelope for user: ' + envelope.context.user.email);
 		db.get(`SELECT value FROM store WHERE key = ?`, [envelope.context.user.email], async (err, row) => {
 			if (err) {
 				console.error('app POST / - db error: ' + err);
 				return res.render('login', { signedRequest: req.body.signed_request });
 			}
-			
+
 			const userId = row ? row.value : null;
 			if (!userId) {
 				res.render('login', { signedRequest: req.body.signed_request });
