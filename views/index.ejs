@@ -30,7 +30,14 @@
                     <input type="submit" value="Submit">
                 </form>                
             </div>
-            <div><a id="logout" href="/logout">Logout</a><br /></div>
+            <div>
+                <form id="logout-form" action="/logout" method="POST">
+                    <% if (typeof signedRequest !== 'undefined' && signedRequest) { %>
+                    <input type="hidden" name="signed_request" value="<%= signedRequest %>" />
+                    <% } %>
+                    <button type="submit" style="background:none;border:none;padding:0;color:#0070d2;cursor:pointer;text-decoration:underline;font-size:inherit;">Logout</button>
+                </form>
+            </div>
         </p>
     </div>        
 </body> 

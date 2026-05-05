@@ -161,15 +161,20 @@ router.get('/auth-success', function(req, res) {
   res.render('auth-success');
 });
 
+router.post('/logout', function(req, res, next) {
+  const signedRequest = req.body.signed_request || null;
+  axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
+    .then(() => {
+      console.log('Logged out of Auth0 successfully');
+      res.render('login', { signedRequest });
+    })
+    .catch(err => {
+      console.log('Error logging out of Auth0: ' + err);
+      res.render('login', { signedRequest });
+    });
+});
+
 router.get('/logout', function(req, res, next) {
-  /*
-  db.run(`DELETE FROM store WHERE key = ?`, [req.session.envelope.context.user.email, function(err) {
-    if (err) {
-      console.log('Error deleting email from database: ' + err);
-    }
-  });
-  */
-  // Log out of Auth0 as well by calling the logout endpoint with the appropriate parameters
   axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
     .then(() => {
       console.log('Logged out of Auth0 successfully');
@@ -179,7 +184,6 @@ router.get('/logout', function(req, res, next) {
       console.log('Error logging out of Auth0: ' + err);
       res.send('Not logged out');
     });
-
 });
 
 module.exports = router;
