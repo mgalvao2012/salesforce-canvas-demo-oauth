@@ -1,4 +1,4 @@
-# CanvasDemo
+# Salesforce Canvas Demo with OAuth
 
 Node.js app showcasing Salesforce Canvas integration with Auth0 OAuth authentication, supporting both desktop (browser popup) and mobile (Salesforce Mobile SDK / WKWebView) flows.
 
@@ -11,7 +11,7 @@ This app is embedded inside Salesforce as a Canvas app. Salesforce sends a signe
 The app supports two authentication paths:
 
 - **Desktop**: Auth0 Universal Login opened in a popup window using the OpenID Connect flow
-- **Mobile (Salesforce Mobile SDK)**: Email/password form submitting directly to Auth0's Resource Owner Password grant, because the WKWebView in Salesforce's mobile container cannot reliably open browser popups
+- **Mobile (Salesforce Mobile)**: Email/password form submitting directly to Auth0's Resource Owner Password grant, because the WKWebView in Salesforce's mobile container cannot reliably open browser popups
 
 ---
 
@@ -119,6 +119,60 @@ npm start
 
 Set all environment variables in Heroku Config Vars (Settings → Config Vars) and deploy via the button above or `git push heroku main`.
 
+
+### Salesforce Configuration
+
+#### Part 1: Create a visualforce **CanvasJS** using the following apex code:
+```
+<apex:page >
+    <apex:canvasApp applicationName="CanvasJS" height="500px" width="500px"/>
+</apex:page>
+```
+
+Enable the option "Available for Lightning Experience, Experience Builder sites, and the mobile app"
+
+
+#### Part 2: Create the External Client App: 
+---
+**Section Policies > App Policies**
+- Start Page: `OAuth`
+- Selected Profiles: `System Administrator` (only for testing)
+
+
+**Section Policies > OAuth Policies**
+- Permited Users: `Admin approved users are pre-authorized`
+- OAuth Start URL: `the-url-where-is-running-the-nodejs-project/callback_sfdc`
+---
+
+**Section Settings**
+
+**Fields:**
+- External Client App Name: `CanvasJS`
+- API Name: `CanvasJS`
+- Contact Email: `your email`
+
+**OAuth Settings:**
+- Canvas App URL: `the-url-where-is-running-the-nodejs-project/callback_sfdc`
+
+**Selected OAuth Scopes:**
+- `Access the identity URL service (id, profile, email, address, phone)`
+- `Manage user data via APIs (api)`
+- `Full access (full)`
+- `Perform requests at any time (refresh_token, offline_access)`
+- `Access the Salesforce API Platform (sfap_api)`
+
+**Canvas App Settings:**
+
+- Canvas App URL: `the-url-where-is-running-the-nodejs-project`
+- Access Method: `Signed Request (POST)`
+- Locations: `Visualforce Page` and `Lightning Component`
+---
+#### Part 3: Add the visualforce component to the Account page 
+
+- Open the Account record page 
+- In the ***Setup Menu*** click on **Edit Page**
+- Position the visualforce component on the page
+
 ---
 
 ## Environment Variables
@@ -154,7 +208,7 @@ CSRF protection uses `csurf` in **cookie mode** (`csrf({ cookie: true })`). Sess
 
 ### Stateless Mobile Flow
 
-The mobile flow intentionally avoids relying on server-side sessions. The Canvas envelope is re-decoded from the `signed_request` hidden field on each request rather than read from `req.session`. This is necessary because the Salesforce Mobile SDK's WKWebView operates in a cross-origin iframe context and does not reliably propagate `Set-Cookie` headers across redirects.
+The mobile flow intentionally avoids relying on server-side sessions. The Canvas envelope is re-decoded from the `signed_request` hidden field on each request rather than read from `req.session`. This is necessary because the Salesforce Mobile WKWebView operates in a cross-origin iframe context and does not reliably propagate `Set-Cookie` headers across redirects.
 
 ### Credentials
 
