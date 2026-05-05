@@ -112,20 +112,36 @@ router.post('/login-mobile', async function(req, res) {
   }
 });
 
-router.get('/callback', passport.authenticate('openidconnect', {
-  successRedirect: '/auth-success',
-  failureRedirect: '/login'
-}));
+router.get('/callback', function(req, res, next) {
+  // Capture envelope before Passport regenerates the session (session fixation prevention).
+  const savedEnvelope = req.session.envelope;
+
+  passport.authenticate('openidconnect', function(err, user) {
+    if (err) return next(err);
+    if (!user) return res.redirect('/login');
+
+    req.logIn(user, function(err) {
+      if (err) return next(err);
+
+      // Restore envelope into the new session so downstream routes can use it.
+      req.session.envelope = savedEnvelope;
+      req.session.save(function(err) {
+        if (err) return next(err);
+        res.redirect('/auth-success');
+      });
+    });
+  })(req, res, next);
+});
 
 router.get('/auth-success', function(req, res) {
-  console.log('Session after successful login: ' + JSON.stringify(req.session));
+  const envelope = req.session.envelope;
+  if (!req.user || !envelope) {
+    return res.status(401).send('Session expired. Please reload the app.');
+  }
   db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-    [req.session.envelope.context.user.email, req.session.passport.user.id], function(err) {
-      if (err) {
-        console.error('Error storing email in database: ' + err);
-      }
+    [envelope.context.user.email, req.user.id], function(err) {
+      if (err) console.error('Error storing email in database: ' + err);
     });
-
   res.render('auth-success');
 });
 
