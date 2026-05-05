@@ -3,7 +3,7 @@
 <body>
 <script>
   if (window.opener) {
-    window.opener.postMessage('auth0-success', '*');
+    window.opener.postMessage('auth0-success', '<%= callbackUrl.replace("/callback", "") %>');
     window.close();
   } else {
     window.location.href = '/';

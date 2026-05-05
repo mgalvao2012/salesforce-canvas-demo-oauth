@@ -50,6 +50,9 @@ Salesforce Canvas
 ```
 ├── app.js                  # Express app entry point, Canvas signed_request handler
 ├── db.js                   # SQLite setup (user email → Auth0 user ID store)
+├── lib/
+│   ├── canvas.js           # decodeSignedRequest() — HMAC verification + envelope decode
+│   └── salesforce.js       # getAccountName() — Salesforce Account API helper
 ├── routes/
 │   ├── auth.js             # Auth routes: /login, /login-mobile, /callback, /auth-success, /logout
 │   └── index.js            # App routes: GET /, POST /updateAccount
@@ -58,12 +61,12 @@ Salesforce Canvas
 │   ├── index.ejs           # Main app page (account name editor)
 │   ├── auth-success.ejs    # Desktop post-login bridge (closes popup, reloads parent)
 │   ├── callback.ejs        # Salesforce OAuth callback page
-│   ├── error.ejs           # Error page
-│   └── home.ejs            # Unused home template
+│   └── error.ejs           # Error page
 ├── var/db/
 │   ├── sessions.db         # express-session SQLite store
 │   └── store.db            # User email → Auth0 user ID mapping
 ├── certs/                  # Local HTTPS certificates (development only)
+├── .env.example            # Template for all required environment variables
 └── test/
     └── test.http           # Manual HTTP test requests
 ```
@@ -106,9 +109,10 @@ npm install
 # Generate local HTTPS certs (required — Canvas requires HTTPS)
 # Place localhost.pem and localhost-key.pem in ./certs/
 
-# Create .env file (see Environment Variables section)
+# Copy the example env file and fill in your values
+cp .env.example .env
 
-LOCAL_HTTPS=true npm start
+npm start
 ```
 
 ### Heroku Deployment
@@ -119,13 +123,18 @@ Set all environment variables in Heroku Config Vars (Settings → Config Vars) a
 
 ## Environment Variables
 
+Copy `.env.example` to `.env` and fill in the values. All variables are required unless a default is noted.
+
 | Variable | Description |
 |---|---|
 | `CANVAS_CONSUMER_SECRET` | Consumer secret from the Salesforce Connected App — used to verify the `signed_request` HMAC |
+| `SALESFORCE_DOMAIN` | Salesforce org instance hostname, e.g. `mycompany.my.salesforce.com` — used to load the Canvas SDK |
 | `AUTH0_DOMAIN` | Auth0 tenant domain, e.g. `your-tenant.auth0.com` |
 | `AUTH0_CLIENT_ID` | Auth0 application Client ID |
 | `AUTH0_CLIENT_SECRET` | Auth0 application Client Secret |
-| `URL` | Public base URL of this app, e.g. `https://your-app.herokuapp.com` — used to build the OAuth callback URL |
+| `AUTH0_CONNECTION` | Auth0 database connection name (default: `Username-Password-Authentication`) |
+| `SESSION_SECRET` | Strong random secret for signing session cookies — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `URL` | Public base URL of this app, e.g. `https://your-app.herokuapp.com` — used to build the OAuth callback URL and `postMessage` origin |
 | `PORT` | Port to listen on (set automatically by Heroku) |
 | `LOCAL_HTTPS` | Set to `true` to enable the local HTTPS server using certs in `./certs/` |
 
@@ -149,8 +158,9 @@ The mobile flow intentionally avoids relying on server-side sessions. The Canvas
 
 ### Credentials
 
-- The session secret (`'keyboard cat'` in `app.js`) should be replaced with a strong random value via an environment variable before any production use.
+- The session secret is read from `SESSION_SECRET` in the environment. Generate a strong value with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 - Auth0 credentials and the Canvas consumer secret are never exposed to the client.
+- Auth0 `error_description` values are logged server-side only; the client always receives a generic error message.
 
 ---
 

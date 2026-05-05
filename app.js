@@ -17,6 +17,8 @@ const fs    = require('fs');
 // allowing it to inherit from session.Store
 var SQLiteStore = require('connect-sqlite3')(session);
 var db = require('./db');
+var { decodeSignedRequest } = require('./lib/canvas');
+var { getAccountName } = require('./lib/salesforce');
 
 var indexRouter = require('./routes/index');
 var authRouter = require('./routes/auth');
@@ -27,24 +29,22 @@ var app = express();
 if (process.env.DYNO) {
   app.set('trust proxy', 1);
 }
-var crypto = require("crypto");
 const consumerSecretApp = process.env.CANVAS_CONSUMER_SECRET;
 const PORT = process.env.PORT;
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set("view engine", "ejs");
-app.use(bodyParser.urlencoded());
-app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ limit: '10kb' }));
+app.use(bodyParser.json({ limit: '10kb' }));
 app.locals.pluralize = require('pluralize');
 
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-  secret: 'keyboard cat',
+  secret: process.env.SESSION_SECRET,
   resave: false, // don't save session if unmodified
   saveUninitialized: false, // don't create session until something stored
   store: new SQLiteStore({ db: 'sessions.db', dir: 'var/db' }),
@@ -64,8 +64,8 @@ app.use(function(req, res, next) {
   next();
 });
 
-// get information about the device from the user-agent header and 
-// make it available in the templates for conditional rendering based 
+// get information about the device from the user-agent header and
+// make it available in the templates for conditional rendering based
 // on whether the user is on mobile or desktop
 app.use(function(req, res, next) {
   const ua = req.headers['user-agent'];
@@ -74,8 +74,7 @@ app.use(function(req, res, next) {
   res.locals.clientId = process.env.AUTH0_CLIENT_ID;
   res.locals.domain = process.env.AUTH0_DOMAIN;
   res.locals.callbackUrl = process.env.URL + '/callback';
-  console.log('User-Agent: ' + ua);
-  console.log('isMobile: ' + res.locals.isMobile);
+  res.locals.salesforceDomain = process.env.SALESFORCE_DOMAIN;
   next();
 });
 
@@ -83,30 +82,21 @@ app.use('/', indexRouter);
 app.use('/', authRouter);
 
 app.get("/callback_sfdc", function (req, res) {
-	console.log(req.query);
 	res.render("callback");
 });
 
 app.post("/", async function (req, res) {
-	var bodyArray = req.body.signed_request.split(".");
-	var consumerSecret = bodyArray[0];
-	var encoded_envelope = bodyArray[1];
+	const envelope = decodeSignedRequest(req.body.signed_request, consumerSecretApp);
 
-	var check = crypto
-		.createHmac("sha256", consumerSecretApp)
-		.update(encoded_envelope)
-		.digest("base64");
-
-	if (check === consumerSecret) {
-		const envelope = JSON.parse(Buffer.from(encoded_envelope, "base64").toString("ascii"));
-		console.log("got the session object:");
-		console.log(req.body.signed_request);
+	if (envelope) {
 		req.session.envelope = envelope;
-		console.log("req.session.envelope:", req.session.envelope);
 
 		db.get(`SELECT value FROM store WHERE key = ?`, [envelope.context.user.email], async (err, row) => {
+			if (err) {
+				console.error('app POST / - db error: ' + err);
+				return res.render('login', { signedRequest: req.body.signed_request });
+			}
 			const userId = row ? row.value : null;
-			console.log('app - db get userId: ' + userId);
 			if (!userId) {
 				res.render('login', { signedRequest: req.body.signed_request });
 			} else {
@@ -117,30 +107,28 @@ app.post("/", async function (req, res) {
 					csrfProtectionInstance(req, res, async function() {
 						try {
 							const recordId = envelope.context.environment.record.Id;
-							const url = `${envelope.client.instanceUrl}${envelope.context.links.sobjectUrl}Account/${recordId}?fields=Name`;
-							const headers = { Authorization: `Bearer ${envelope.client.oauthToken}`, 'Content-Type': 'application/json' };
-							const accountRes = await axios.get(url, { headers });
+							const accountName = await getAccountName(recordId, envelope);
 							res.render('index', {
 								recordId,
-								accountName: accountRes.data.Name,
+								accountName,
 								signedRequestJson: envelope,
 								signedRequest: req.body.signed_request,
 								csrfToken: req.csrfToken(),
 							});
 						} catch (renderErr) {
-							console.log('app POST / - render error: ' + renderErr);
+							console.error('app POST / - render error: ' + renderErr);
 							res.render('login', { signedRequest: req.body.signed_request });
 						}
 					});
 				} catch (e) {
-					console.log('app POST / - csrf error: ' + e);
+					console.error('app POST / - csrf error: ' + e);
 					res.render('login', { signedRequest: req.body.signed_request });
 				}
 			}
-		});	
+		});
 
 	} else {
-		res.send("authentication failed");
+		res.status(401).send("authentication failed");
 	}
 });
 
@@ -158,11 +146,6 @@ app.use(function(err, req, res, next) {
   // render the error page
   res.status(err.status || 500);
   res.render('error');
-});
-
-app.use(function(req, res, next) {
-  res.locals.csrfToken = req.csrfToken();
-  next();
 });
 
 if (process.env.LOCAL_HTTPS === 'true') {

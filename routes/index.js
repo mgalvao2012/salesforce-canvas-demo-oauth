@@ -1,50 +1,27 @@
 var express = require('express');
-var crypto = require('crypto');
-var axios = require("axios").default;
+var axios = require('axios').default;
 var csrf = require('csurf');
 var csrfProtection = csrf({ cookie: true });
 var ensureLogIn = require('connect-ensure-login').ensureLoggedIn;
 var db = require('../db');
+var { decodeSignedRequest } = require('../lib/canvas');
+var { getAccountName } = require('../lib/salesforce');
 
-var ensureLoggedIn = ensureLogIn();
-var app = express();
 var router = express.Router();
-
-async function getAccountName(recordId, envelope) {
-  let instanceUrl = envelope.client.instanceUrl;
-  let sobjectUrl = envelope.context.links.sobjectUrl;
-  let oauthToken = envelope.client.oauthToken;
-  const url = `${instanceUrl}${sobjectUrl}Account/${recordId}?fields=Name`;
-  const headers = {
-    Authorization: `Bearer ${oauthToken}`,
-    "Content-Type": "application/json",
-  };
-  try {
-    const response = await axios.get(url, { headers });
-    console.log("account get data successfully:", response.data);
-    return response.data.Name;
-  } catch (error) {
-    console.error("Error getting account:", error.response?.data || error.message);
-    throw error;
-    return "";
-  }
-}
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
-  console.log('/ - req.session: ' + JSON.stringify(req.session));
-  console.log('/ - req.body.envelope: ' + JSON.stringify(req.body.envelope));
   const envelope = req.session.envelope;
   if (!envelope || !envelope.context || !envelope.context.user || !envelope.context.user.email) {
-    console.log('User email is not available in the envelope. Redirecting to login page.');
     res.render('login');
     return;
   }
-  
-  console.log('/ - req.session.envelope: ' + JSON.stringify(envelope));
-  console.log('/ - req.session.envelope.context.user.email: ' + envelope.context.user.email);
 
   db.get(`SELECT value FROM store WHERE key = ?`, [envelope.context.user.email], (err, row) => {
+    if (err) {
+      console.error('/ - db error: ' + err);
+      return res.render('login');
+    }
     res.locals.filter = null;
     csrfProtection(req, res, async function() {
       res.render("index", {
@@ -65,30 +42,26 @@ router.post("/updateAccount", async function (req, res) {
   // Mobile Canvas flow: session cookie not maintained by WKWebView,
   // re-decode envelope from signed_request carried in the form body.
   if (!envelope && req.body.signed_request) {
-    try {
-      const parts = req.body.signed_request.split('.');
-      const check = crypto
-        .createHmac('sha256', process.env.CANVAS_CONSUMER_SECRET)
-        .update(parts[1])
-        .digest('base64');
-      if (check === parts[0]) {
-        envelope = JSON.parse(Buffer.from(parts[1], 'base64').toString('ascii'));
-      }
-    } catch (e) {
-      console.log('/updateAccount - signed_request decode error: ' + e);
+    envelope = decodeSignedRequest(req.body.signed_request, process.env.CANVAS_CONSUMER_SECRET);
+    if (!envelope) {
+      console.error('/updateAccount - signed_request HMAC mismatch or decode error');
     }
   }
-  let instanceUrl = envelope.client.instanceUrl;
-  let sobjectUrl = envelope.context.links.sobjectUrl;
-  let oauthToken = envelope.client.oauthToken;
+
+  if (!envelope) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  const instanceUrl = envelope.client.instanceUrl;
+  const sobjectUrl = envelope.context.links.sobjectUrl;
+  const oauthToken = envelope.client.oauthToken;
   const url = `${instanceUrl}${sobjectUrl}Account/${recordId}`;
   const headers = {
     Authorization: `Bearer ${oauthToken}`,
     "Content-Type": "application/json",
   };
   try {
-    const response = await axios.patch(url, { name: accountName }, { headers });
-    console.log("account updated successfully:", response.data);
+    await axios.patch(url, { name: accountName }, { headers });
   } catch (error) {
     console.error("Error updating account:", error.response?.data || error.message);
     throw error;
