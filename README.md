@@ -252,4 +252,4 @@ The app stores a mapping of Salesforce user email → Auth0 user ID to avoid req
 ---
 
 *Credits: [Jitendra Zaa](https://www.jitendrazaa.com/) for the original Canvas + Node.js integration pattern.*
-This app was created using the resources below as a reference: [Video](https://www.youtube.com/watch?v=FhMzTt8IShw&feature=youtu.be) and [Blog Post](https://www.jitendrazaa.com/blog/salesforce/salesforce-integration-with-nodejs-based-applications-using-canvas/)
+This app was created using the resources shard by him: [Video](https://www.youtube.com/watch?v=FhMzTt8IShw&feature=youtu.be) and [Blog Post](https://www.jitendrazaa.com/blog/salesforce/salesforce-integration-with-nodejs-based-applications-using-canvas/)
