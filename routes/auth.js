@@ -118,6 +118,7 @@ router.get('/callback', passport.authenticate('openidconnect', {
 }));
 
 router.get('/auth-success', function(req, res) {
+  console.log('Session after successful login: ' + JSON.stringify(req.session));
   db.run(`INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
     [req.session.envelope.context.user.email, req.session.passport.user.id], function(err) {
       if (err) {
@@ -132,18 +133,19 @@ router.post('/logout', function(req, res, next) {
   const signedRequest = req.body.signed_request || null;
   axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
     .then(() => {
-      res.render('login', { signedRequest });
+      res.render('login', { signedRequest: signed_request });
     })
     .catch(err => {
       console.error('Error logging out of Auth0: ' + err);
-      res.render('login', { signedRequest });
+      res.render('login', { signedRequest: signed_request });
     });
 });
 
 router.get('/logout', function(req, res, next) {
+  const signedRequest = req.body.signed_request || null;
   axios.get('https://' + process.env['AUTH0_DOMAIN'] + '/v2/logout')
     .then(() => {
-      res.render('login');
+      res.render('login', { signedRequest: signed_request });
     })
     .catch(err => {
       console.error('Error logging out of Auth0: ' + err);
