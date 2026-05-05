@@ -104,17 +104,40 @@ app.post("/", async function (req, res) {
 		req.session.envelope = envelope;
 		console.log("req.session.envelope:", req.session.envelope);
 
-		db.get(`SELECT value FROM store WHERE key = ?`, [req.session.envelope.context.user.email], (err, row) => {
+		db.get(`SELECT value FROM store WHERE key = ?`, [envelope.context.user.email], async (err, row) => {
 			const userId = row ? row.value : null;
 			console.log('app - db get userId: ' + userId);
 			if (!userId) {
-				// userId is not in the database, so we need to go through the authentication flow to get it and store it
 				res.render('login', { signedRequest: req.body.signed_request });
 			} else {
-				// userId is already in the database, so we can skip authentication and go straight to the app
-				res.render('auth-success');
+				// Render the app directly — no redirect — so the mobile WKWebView does not
+				// need to carry a session cookie across requests.
+				try {
+					const csrfProtectionInstance = csrf({ cookie: true });
+					csrfProtectionInstance(req, res, async function() {
+						try {
+							const recordId = envelope.context.environment.record.Id;
+							const url = `${envelope.client.instanceUrl}${envelope.context.links.sobjectUrl}Account/${recordId}?fields=Name`;
+							const headers = { Authorization: `Bearer ${envelope.client.oauthToken}`, 'Content-Type': 'application/json' };
+							const accountRes = await axios.get(url, { headers });
+							res.render('index', {
+								recordId,
+								accountName: accountRes.data.Name,
+								signedRequestJson: envelope,
+								signedRequest: req.body.signed_request,
+								csrfToken: req.csrfToken(),
+							});
+						} catch (renderErr) {
+							console.log('app POST / - render error: ' + renderErr);
+							res.render('login', { signedRequest: req.body.signed_request });
+						}
+					});
+				} catch (e) {
+					console.log('app POST / - csrf error: ' + e);
+					res.render('login', { signedRequest: req.body.signed_request });
+				}
 			}
-		});		
+		});	
 
 	} else {
 		res.send("authentication failed");
