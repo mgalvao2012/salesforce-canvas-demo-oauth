@@ -38,7 +38,7 @@ Salesforce Canvas
          (Auth0 popup)              (Resource Owner Password)
                     │                           │
             GET /callback               render index.ejs directly
-         POST /auth-success
+          GET /auth-success
 ```
 
 **Key design constraint**: The Salesforce Canvas `POST /` is issued by Salesforce's infrastructure, not by the user's WKWebView. The `Set-Cookie` response header therefore never reaches the mobile browser's cookie jar. The entire mobile flow is **stateless with respect to session cookies** — all necessary context travels through hidden form fields (`signed_request`) and is re-validated on every request.
@@ -49,6 +49,7 @@ Salesforce Canvas
 
 ```
 ├── app.js                  # Express app entry point, Canvas signed_request handler
+├── auth0.min.js            # Auth0 JS SDK bundle (served to the browser for the desktop popup login flow)
 ├── db.js                   # SQLite setup (user email → Auth0 user ID store)
 ├── lib/
 │   ├── canvas.js           # decodeSignedRequest() — HMAC verification + envelope decode
@@ -68,7 +69,7 @@ Salesforce Canvas
 ├── certs/                  # Local HTTPS certificates (development only)
 ├── .env.example            # Template for all required environment variables
 └── test/
-    └── test.http           # Manual HTTP test requests
+    └── test.http           # Manual HTTP test requests (not implemented)
 ```
 
 ---
@@ -80,6 +81,7 @@ Salesforce Canvas
 | `express` | HTTP server and routing |
 | `passport` + `passport-openidconnect` | Desktop OAuth via Auth0 OpenID Connect |
 | `express-session` + `connect-sqlite3` | Session store (desktop flow) |
+| `connect-ensure-login` | Login guard middleware — redirects unauthenticated requests |
 | `csurf` | CSRF protection (cookie mode) |
 | `axios` | Auth0 token exchange and Salesforce API calls |
 | `ejs` | Server-side HTML templating |
@@ -88,6 +90,9 @@ Salesforce Canvas
 | `cookie-parser` | Cookie parsing (required for CSRF cookie mode) |
 | `morgan` | HTTP request logging |
 | `dotenv` | Environment variable loading |
+| `@salesforce/canvas-js-sdk` | Salesforce Canvas JS SDK (loaded in views for Canvas API access) |
+| `base64-url` | Base64url encoding/decoding used in signed_request processing |
+| `crypto-js` | HMAC-SHA256 computation for Canvas signature verification |
 
 ---
 
@@ -235,6 +240,10 @@ Since session state is unavailable, the Canvas envelope (containing the Salesfor
 ### Why Auth0 Resource Owner Password grant for mobile?
 
 The standard OpenID Connect flow requires opening a browser popup or redirect, which is unreliable inside Salesforce's Cordova/WKWebView container on mobile. The Resource Owner Password grant allows credentials to be submitted directly from a form inside the WebView without any popup or external navigation.
+
+### Why is the Canvas envelope manually saved and restored in `/callback`?
+
+Passport's `req.logIn()` regenerates the session (a standard session-fixation prevention measure), which destroys all data stored in the old session — including the Canvas envelope that was saved during the initial `POST /`. Without intervention, `/auth-success` would find `req.session.envelope` empty and fail. The `/callback` handler captures the envelope from the old session before calling `req.logIn()`, then writes it back into the new session and calls `req.session.save()` before redirecting, so the envelope is guaranteed to be present when `/auth-success` reads it.
 
 ### Why SQLite?
 
