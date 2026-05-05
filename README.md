@@ -1,6 +1,6 @@
 # Salesforce Canvas Demo with OAuth
 
-Node.js app showcasing Salesforce Canvas integration with Auth0 OAuth authentication, supporting both desktop (browser popup) and mobile (Salesforce Mobile SDK / WKWebView) flows.
+Node.js app showcasing Salesforce Canvas integration with Auth0 OAuth authentication, supporting both desktop (browser popup) and mobile (Salesforce Mobile / WKWebView) flows.
 
 ---
 
