@@ -89,46 +89,119 @@ app.post("/", async function (req, res) {
 	console.log('app POST / - received signed_request: ' + req.body.signed_request);
 	const envelope = decodeSignedRequest(req.body.signed_request, consumerSecretApp);
 	console.log('app POST / - decoded envelope: ' + JSON.stringify(envelope));
-	
-	if (envelope) {		
+
+	if (envelope) {
 		req.session.envelope = envelope;
 		console.log('app POST / - decoded envelope for user: ' + envelope.context.user.email);
-		db.get(`SELECT value FROM store WHERE key = ?`, [envelope.context.user.email], async (err, row) => {
-			if (err) {
-				console.error('app POST / - db error: ' + err);
-				return res.render('login', { signedRequest: req.body.signed_request });
-			}
 
-			const userId = row ? row.value : null;
-			if (!userId) {
-				res.render('login', { signedRequest: req.body.signed_request });
-			} else {
-				// Render the app directly — no redirect — so the mobile WKWebView does not
-				// need to carry a session cookie across requests.
-				try {
-					const csrfProtectionInstance = csrf({ cookie: true });
-					csrfProtectionInstance(req, res, async function() {
+		// Try silent re-auth with refresh token first (mobile flow)
+		db.get(
+			`SELECT auth0_user_id, refresh_token, created_at FROM refresh_tokens WHERE email = ?`,
+			[envelope.context.user.email],
+			async (err, tokenRow) => {
+				if (err) {
+					console.error('app POST / - refresh token lookup error: ' + err);
+				}
+
+				// Check if refresh token exists and is within absolute lifetime (30 days)
+				const now = Math.floor(Date.now() / 1000);
+				const maxLifetime = 30 * 24 * 60 * 60; // 30 days in seconds
+
+				if (tokenRow && tokenRow.refresh_token && (now - tokenRow.created_at < maxLifetime)) {
+					// Attempt silent re-auth
+					try {
+						const tokenRes = await axios.post(`https://${process.env.AUTH0_DOMAIN}/oauth/token`, {
+							grant_type: 'refresh_token',
+							refresh_token: tokenRow.refresh_token,
+							client_id: process.env.AUTH0_MOBILE_CLIENT_ID
+						});
+
+						const { access_token, refresh_token: newRefreshToken } = tokenRes.data;
+
+						// Rotate refresh token if Auth0 returned a new one
+						if (newRefreshToken) {
+							db.run(
+								`UPDATE refresh_tokens SET refresh_token = ?, created_at = ? WHERE email = ?`,
+								[newRefreshToken, now, envelope.context.user.email],
+								function(err) {
+									if (err) console.error('app POST / - refresh token rotation error: ' + err);
+								}
+							);
+						}
+
+						console.log('app POST / - silent re-auth successful for: ' + envelope.context.user.email);
+
+						// Render app directly
 						try {
-							const recordId = envelope.context.environment.record.Id;
-							const accountName = await getAccountName(recordId, envelope);
-							res.render('index', {
-								recordId,
-								accountName,
-								signedRequestJson: envelope,
-								signedRequest: req.body.signed_request,
-								csrfToken: req.csrfToken(),
+							const csrfProtectionInstance = csrf({ cookie: true });
+							csrfProtectionInstance(req, res, async function() {
+								try {
+									const recordId = envelope.context.environment.record.Id;
+									const accountName = await getAccountName(recordId, envelope);
+									res.render('index', {
+										recordId,
+										accountName,
+										signedRequestJson: envelope,
+										signedRequest: req.body.signed_request,
+										csrfToken: req.csrfToken(),
+									});
+								} catch (renderErr) {
+									console.error('app POST / - render error: ' + renderErr);
+									res.render('login', { signedRequest: req.body.signed_request });
+								}
 							});
-						} catch (renderErr) {
-							console.error('app POST / - render error: ' + renderErr);
+						} catch (e) {
+							console.error('app POST / - csrf error: ' + e);
 							res.render('login', { signedRequest: req.body.signed_request });
 						}
-					});
-				} catch (e) {
-					console.error('app POST / - csrf error: ' + e);
-					res.render('login', { signedRequest: req.body.signed_request });
+						return;
+					} catch (refreshErr) {
+						console.error('app POST / - refresh token exchange failed: ' + (refreshErr.response?.data || refreshErr.message));
+						// Delete invalid refresh token
+						db.run(`DELETE FROM refresh_tokens WHERE email = ?`, [envelope.context.user.email]);
+						// Fall through to legacy store lookup
+					}
 				}
+
+				// Fall back to legacy store lookup (or if no refresh token)
+				db.get(`SELECT value FROM store WHERE key = ?`, [envelope.context.user.email], async (err, row) => {
+					if (err) {
+						console.error('app POST / - db error: ' + err);
+						return res.render('login', { signedRequest: req.body.signed_request });
+					}
+
+					const userId = row ? row.value : null;
+					if (!userId) {
+						res.render('login', { signedRequest: req.body.signed_request });
+					} else {
+						// Render the app directly — no redirect — so the mobile WKWebView does not
+						// need to carry a session cookie across requests.
+						try {
+							const csrfProtectionInstance = csrf({ cookie: true });
+							csrfProtectionInstance(req, res, async function() {
+								try {
+									const recordId = envelope.context.environment.record.Id;
+									const accountName = await getAccountName(recordId, envelope);
+									res.render('index', {
+										recordId,
+										accountName,
+										signedRequestJson: envelope,
+										signedRequest: req.body.signed_request,
+										csrfToken: req.csrfToken(),
+									});
+								} catch (renderErr) {
+									console.error('app POST / - render error: ' + renderErr);
+									res.render('login', { signedRequest: req.body.signed_request });
+								}
+							});
+						} catch (e) {
+							console.error('app POST / - csrf error: ' + e);
+							res.render('login', { signedRequest: req.body.signed_request });
+						}
+					}
+				});
 			}
-		});
+		);
 
 	} else {
 		res.status(401).send("authentication failed");
