@@ -47,6 +47,13 @@ router.get('/login',
 
 // PKCE-based login start for mobile (Authorization Code + PKCE)
 router.get('/login-mobile-start', function(req, res) {
+  // Debug: Check if AUTH0_MOBILE_CLIENT_ID is set
+  if (!process.env.AUTH0_MOBILE_CLIENT_ID) {
+    console.error('/login-mobile-start - AUTH0_MOBILE_CLIENT_ID not set in environment');
+    return res.status(500).send('Server configuration error: AUTH0_MOBILE_CLIENT_ID not set');
+  }
+  console.log('/login-mobile-start - Using mobile client ID:', process.env.AUTH0_MOBILE_CLIENT_ID.substring(0, 10) + '...');
+
   // Decode Canvas envelope from query string or session
   let envelope = null;
   if (req.query.signed_request) {
