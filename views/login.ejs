@@ -12,24 +12,23 @@
 
 		<% if (isMobile) { %>
 		<style>
-			#login-form { display:flex; flex-direction:column; gap:12px; max-width:320px; margin:40px auto; }
-			#login-form input { padding:10px; font-size:16px; border:1px solid #ccc; border-radius:4px; }
-			#login-form button { padding:12px; font-size:16px; background:#635dff; color:#fff; border:none; border-radius:4px; cursor:pointer; }
-			#login-error { color:red; font-size:14px; }
+			#login-container { display:flex; flex-direction:column; align-items:center; gap:12px; max-width:320px; margin:40px auto; text-align:center; }
+			#login-button { padding:12px 24px; font-size:16px; background:#635dff; color:#fff; border:none; border-radius:4px; cursor:pointer; text-decoration:none; display:inline-block; }
+			#login-error { color:red; font-size:14px; margin-top:8px; }
 		</style>
 
-		<form id="login-form" action="/login-mobile" method="POST">
+		<div id="login-container">
 			<h2>Sign in</h2>
+			<p>You will be redirected to Auth0 to securely sign in with your email, password, and authenticator app.</p>
 			<% if (typeof signedRequest !== 'undefined' && signedRequest) { %>
-			<input type="hidden" name="signed_request" value="<%= signedRequest %>" />
+			<a id="login-button" href="/login-mobile-start?signed_request=<%= encodeURIComponent(signedRequest) %>">Sign in with Auth0</a>
+			<% } else { %>
+			<a id="login-button" href="/login-mobile-start">Sign in with Auth0</a>
 			<% } %>
-			<input type="email" name="email" placeholder="Email" required />
-			<input type="password" name="password" placeholder="Password" required />
  			<% if (typeof error !== 'undefined' && error) { %>
 			<div id="login-error"><%= error %></div>
 			<% } %>
-			<button type="submit">Login</button>
-		</form>
+		</div>
 
 		<% } else { %>
 
