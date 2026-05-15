@@ -18,67 +18,62 @@ The app supports two authentication paths, **both requiring Multi-Factor Authent
 ## Architecture
 
 ```mermaid
-flowchart TB
-    subgraph SF["Salesforce"]
-        Canvas[Canvas App<br/>Visualforce/Lightning]
-    end
+flowchart TD
+    Canvas["Salesforce Canvas<br/>Visualforce/Lightning"]
 
-    subgraph Express["Express App (Node.js)"]
-        Entry["POST /<br/>(app.js)"]
-        Verify[/"HMAC verify<br/>+ decode envelope"/]
-        Lookup{User in<br/>SQLite store?}
-        IndexView["render index.ejs<br/>(app UI)"]
+    subgraph ExpressApp["Express App"]
+        Entry["POST /"]
+        Verify["HMAC verify<br/>decode envelope"]
+        Lookup{"User in<br/>SQLite?"}
         LoginView["render login.ejs"]
-
-        subgraph Desktop["Desktop Flow (browser popup)"]
-            DLogin["GET /login<br/>(Passport)"]
-            DCallback["GET /callback"]
-            DSuccess["GET /auth-success"]
-        end
-
-        subgraph Mobile["Mobile Flow (in-iframe AJAX)"]
-            MLogin["POST /login-mobile<br/>(email + password)"]
-            MMfa["POST /login-mobile-mfa<br/>(TOTP code)"]
-            MRender["document.write<br/>rendered HTML"]
-        end
-
-        DB[(SQLite<br/>store.db<br/>sessions.db)]
+        IndexView["render index.ejs"]
+        DLogin["GET /login"]
+        DCallback["GET /callback"]
+        DSuccess["GET /auth-success"]
+        MLogin["POST /login-mobile"]
+        MMfa["POST /login-mobile-mfa"]
+        MRender["document.write HTML"]
     end
 
-    subgraph Auth0
-        AuthZ["/authorize<br/>+ /oauth/token<br/>+ /userinfo"]
-        MFA["MFA Policy: Always<br/>TOTP factor"]
+    DB[("SQLite<br/>store.db")]
+
+    subgraph Auth0Service["Auth0"]
+        AuthZ["/authorize<br/>/oauth/token<br/>/userinfo"]
+        MFA["MFA: Always<br/>TOTP factor"]
     end
 
-    Canvas -->|"signed_request"| Entry
+    Canvas -->|signed_request| Entry
     Entry --> Verify
     Verify --> Lookup
-    Lookup -->|"yes (returning user)"| IndexView
-    Lookup -->|"no (first login)"| LoginView
+    Lookup -->|known user| IndexView
+    Lookup -->|new user| LoginView
 
-    LoginView -.->|"desktop click"| DLogin
-    LoginView -.->|"mobile submit"| MLogin
+    LoginView -->|desktop popup| DLogin
+    LoginView -->|mobile AJAX| MLogin
 
-    DLogin -->|"302 redirect"| AuthZ
-    AuthZ -->|"code + state"| DCallback
-    DCallback -->|"token exchange"| AuthZ
+    DLogin -->|302 redirect| AuthZ
+    AuthZ -->|code| DCallback
+    DCallback -->|token exchange| AuthZ
     DCallback --> DSuccess
-    DSuccess -->|"postMessage<br/>reload parent"| Canvas
+    DSuccess -->|reload parent| Canvas
 
-    MLogin -->|"grant: password-realm"| AuthZ
-    AuthZ -->|"mfa_required + mfa_token"| MLogin
-    MLogin -.->|"show TOTP input"| MMfa
-    MMfa -->|"grant: mfa-otp"| AuthZ
-    AuthZ -->|"access_token + refresh_token"| MMfa
+    MLogin -->|password-realm| AuthZ
+    AuthZ -->|mfa_required| MLogin
+    MLogin -->|show TOTP| MMfa
+    MMfa -->|mfa-otp| AuthZ
+    AuthZ -->|access_token| MMfa
     MMfa --> MRender
 
-    Express -.->|"persist user mapping"| DB
-    AuthZ -.-> MFA
+    DSuccess -.->|persist| DB
+    MMfa -.->|persist| DB
+    Lookup -.->|read| DB
+    AuthZ --- MFA
 
     classDef sfStyle fill:#00A1E0,stroke:#005A8B,color:#fff
     classDef exprStyle fill:#68A063,stroke:#3C763D,color:#fff
     classDef authStyle fill:#EB5424,stroke:#A0341A,color:#fff
     classDef dbStyle fill:#003B57,stroke:#001F2E,color:#fff
+
     class Canvas sfStyle
     class Entry,Verify,Lookup,IndexView,LoginView,DLogin,DCallback,DSuccess,MLogin,MMfa,MRender exprStyle
     class AuthZ,MFA authStyle
