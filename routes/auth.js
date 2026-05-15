@@ -91,7 +91,10 @@ router.get('/login-mobile-start', function(req, res) {
       authorizeUrl.searchParams.set('code_challenge', code_challenge);
       authorizeUrl.searchParams.set('code_challenge_method', 'S256');
       authorizeUrl.searchParams.set('state', state);
+      authorizeUrl.searchParams.set('prompt', 'login');  // Force Auth0 to show login form (critical for WKWebView)
+      authorizeUrl.searchParams.set('connection', process.env.AUTH0_CONNECTION || 'Username-Password-Authentication');  // Required for Native apps
 
+      console.log('/login-mobile-start - Redirecting to Auth0:', authorizeUrl.toString());
       res.redirect(authorizeUrl.toString());
     }
   );
