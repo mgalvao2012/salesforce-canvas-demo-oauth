@@ -108,12 +108,13 @@ app.post("/", async function (req, res) {
 				const maxLifetime = 30 * 24 * 60 * 60; // 30 days in seconds
 
 				if (tokenRow && tokenRow.refresh_token && (now - tokenRow.created_at < maxLifetime)) {
-					// Attempt silent re-auth
+					// Attempt silent re-auth using Regular Web App credentials
 					try {
 						const tokenRes = await axios.post(`https://${process.env.AUTH0_DOMAIN}/oauth/token`, {
 							grant_type: 'refresh_token',
 							refresh_token: tokenRow.refresh_token,
-							client_id: process.env.AUTH0_MOBILE_CLIENT_ID
+							client_id: process.env.AUTH0_CLIENT_ID,
+							client_secret: process.env.AUTH0_CLIENT_SECRET
 						});
 
 						const { access_token, refresh_token: newRefreshToken } = tokenRes.data;
