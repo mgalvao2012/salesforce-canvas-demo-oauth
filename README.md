@@ -8,10 +8,10 @@ Node.js app showcasing Salesforce Canvas integration with Auth0 OAuth authentica
 
 This app is embedded inside Salesforce as a Canvas app. Salesforce sends a signed `signed_request` payload to the app via HTTP POST. The app validates the [HMAC](https://en.wikipedia.org/wiki/HMAC) (sometimes expanded as either keyed-hash message authentication code or hash-based message authentication code) signature, decodes the Canvas envelope (which contains the user's identity and Salesforce context), and authenticates the user against Auth0 before rendering the app UI.
 
-The app supports two authentication paths:
+The app supports two authentication paths, **both requiring Multi-Factor Authentication (TOTP)**:
 
-- **Desktop**: Auth0 Universal Login opened in a popup window using the OpenID Connect flow
-- **Mobile (Salesforce Mobile)**: Email/password form submitting directly to Auth0's Resource Owner Password grant, because the WKWebView in Salesforce's mobile container cannot reliably open browser popups
+- **Desktop**: Auth0 Universal Login opened in a popup window using the OpenID Connect flow with built-in MFA challenge
+- **Mobile (Salesforce Mobile)**: Custom in-iframe email/password form using Auth0's `password-realm` and `mfa-otp` grants. The login form, MFA TOTP prompt, and rendered app all stay inside the Salesforce Canvas iframe — no redirects, no popups (which the WKWebView blocks).
 
 ---
 
@@ -33,15 +33,94 @@ Salesforce Canvas
                                   │
                     ┌─────────────┴─────────────┐
                     │                           │
-               Desktop                       Mobile
-            GET /login                  POST /login-mobile
-         (Auth0 popup)              (Resource Owner Password)
-                    │                           │
-            GET /callback               render index.ejs directly
+               Desktop                       Mobile (in iframe)
+            GET /login                  POST /login-mobile (AJAX)
+         (Auth0 popup)              ↓ password-realm grant
+                    │              [mfa_required → show TOTP input]
+                    │              POST /login-mobile-mfa (AJAX)
+                    │              ↓ mfa-otp grant
+            GET /callback           document.write(rendered HTML)
           GET /auth-success
 ```
 
 **Key design constraint**: The Salesforce Canvas `POST /` is issued by Salesforce's infrastructure, not by the user's WKWebView. The `Set-Cookie` response header therefore never reaches the mobile browser's cookie jar. The entire mobile flow is **stateless with respect to session cookies** — all necessary context travels through hidden form fields (`signed_request`) and is re-validated on every request.
+
+**Why custom MFA UI on mobile**: Auth0 sets `X-Frame-Options: DENY` on its hosted login pages, which prevents Auth0 from rendering inside the Salesforce Canvas iframe. The mobile flow therefore uses Auth0's REST API (`/oauth/token` with `password-realm` and `mfa-otp` grants) so that the entire login experience renders directly in the iframe.
+
+---
+
+## Sequence Diagrams
+
+### Desktop (Browser Popup) Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant SF as Salesforce Canvas
+    participant App as Express App
+    participant Browser as User Browser
+    participant Auth0 as Auth0
+
+    SF->>App: POST / (signed_request)
+    App->>App: HMAC verify + decode envelope
+    App->>App: Lookup user in SQLite store
+    alt User known
+        App-->>SF: Render index.ejs directly
+    else User unknown
+        App-->>SF: Render login.ejs (with "Login Auth0" button)
+        Browser->>App: window.open('/login', popup)
+        App->>Auth0: 302 → /authorize (OpenID Connect, prompt=login)
+        Auth0->>Browser: Show login page (popup)
+        Browser->>Auth0: Submit email + password
+        Auth0->>Browser: Show MFA TOTP prompt
+        Browser->>Auth0: Submit 6-digit code
+        Auth0->>App: GET /callback?code=...&state=...
+        App->>Auth0: POST /oauth/token (authorization_code)
+        Auth0-->>App: access_token + id_token + user profile
+        App->>App: Save session, store user in SQLite
+        App-->>Browser: Redirect to /auth-success
+        Browser->>Browser: postMessage('auth0-success') → close popup
+        Browser->>Browser: Reload parent (Canvas iframe)
+        Browser->>SF: Reload triggers POST / again
+        SF->>App: POST / (signed_request)
+        App-->>SF: Render index.ejs directly (user now in store)
+    end
+```
+
+### Mobile (Salesforce iOS/Android) Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant SF as Salesforce Canvas (WKWebView)
+    participant App as Express App
+    participant Form as login.ejs JS
+    participant Auth0 as Auth0
+
+    SF->>App: POST / (signed_request)
+    App->>App: HMAC verify + decode envelope
+    App->>App: Lookup user in SQLite store
+    alt User known
+        App-->>SF: Render index.ejs directly
+    else User unknown
+        App-->>SF: Render login.ejs (mobile: email + password form)
+        Form->>App: POST /login-mobile (AJAX, JSON: email, password, signed_request)
+        App->>Auth0: POST /oauth/token (grant: password-realm)
+        Note over App,Auth0: audience: https://{domain}/mfa/<br/>realm: Username-Password-Authentication
+        Auth0-->>App: 403 mfa_required + mfa_token
+        App-->>Form: { mfa_required: true, mfa_token }
+        Form->>Form: Show TOTP input (hide credentials section)
+        Form->>App: POST /login-mobile-mfa (AJAX, JSON: mfa_token, otp, signed_request)
+        App->>Auth0: POST /oauth/token (grant: mfa-otp)
+        Auth0-->>App: access_token + refresh_token + id_token
+        App->>Auth0: GET /userinfo (Bearer access_token)
+        Auth0-->>App: user profile (sub, email, name)
+        App->>App: Store user in SQLite
+        App->>App: Render index.ejs to HTML string
+        App-->>Form: { success: true, html: "<html>...</html>" }
+        Form->>Form: document.write(html) — replace iframe contents
+    end
+```
 
 ---
 
@@ -55,10 +134,10 @@ Salesforce Canvas
 │   ├── canvas.js           # decodeSignedRequest() — HMAC verification + envelope decode
 │   └── salesforce.js       # getAccountName() — Salesforce Account API helper
 ├── routes/
-│   ├── auth.js             # Auth routes: /login, /login-mobile, /callback, /auth-success, /logout
+│   ├── auth.js             # Auth routes: /login, /login-mobile, /login-mobile-mfa, /callback, /auth-success, /logout
 │   └── index.js            # App routes: GET /, POST /updateAccount
 ├── views/
-│   ├── login.ejs           # Login page (desktop: Auth0 button; mobile: email/password form)
+│   ├── login.ejs           # Login page (desktop: Auth0 button; mobile: AJAX email/password + TOTP form)
 │   ├── index.ejs           # Main app page (account name editor)
 │   ├── auth-success.ejs    # Desktop post-login bridge (closes popup, reloads parent)
 │   ├── callback.ejs        # Salesforce OAuth callback page
@@ -68,6 +147,7 @@ Salesforce Canvas
 │   └── store.db            # User email → Auth0 user ID mapping
 ├── certs/                  # Local HTTPS certificates (development only)
 ├── .env.example            # Template for all required environment variables
+├── AUTH0_SETUP.md          # Step-by-step Auth0 tenant configuration (MFA, grants, connection)
 └── test/
     └── test.http           # Manual HTTP test requests (not implemented)
 ```
@@ -102,9 +182,13 @@ Salesforce Canvas
 
 1. A Salesforce org with a Connected App configured as a Canvas app
 2. An Auth0 tenant with:
-   - A Regular Web Application (for the desktop OpenID Connect flow)
-   - The Resource Owner Password grant enabled (for the mobile flow)
-   - A Username-Password-Authentication database connection
+   - A **Regular Web Application** (used for both desktop OpenID Connect and mobile MFA grants)
+   - **Grant types enabled** on the application: `authorization_code`, `refresh_token`, `password`, `http://auth0.com/oauth/grant-type/password-realm`, `http://auth0.com/oauth/grant-type/mfa-otp`
+   - A **Username-Password-Authentication** database connection
+   - **Default Directory** set to `Username-Password-Authentication` at the tenant level
+   - **Multi-Factor Authentication** enabled with **One-time Password (TOTP)** factor; policy set to **Always**
+
+See [AUTH0_SETUP.md](AUTH0_SETUP.md) for detailed step-by-step Auth0 configuration instructions, including how to enable the password grants via the Management API.
 
 ### Local Development
 
@@ -201,11 +285,19 @@ Copy `.env.example` to `.env` and fill in the values. All variables are required
 
 ## Security
 
+### Multi-Factor Authentication
+
+Both desktop and mobile flows enforce MFA via TOTP (Google Authenticator / Authy / 1Password / Auth0 Guardian / Microsoft Authenticator) when the Auth0 tenant policy is set to **Always**.
+
+- **Desktop**: Auth0's hosted login page handles enrollment (QR code) and challenge (6-digit code) automatically.
+- **Mobile**: Custom UI in [views/login.ejs](views/login.ejs). When Auth0 returns `mfa_required` from the `password-realm` grant, the JavaScript hides the credentials form and shows a TOTP input. The user's code is submitted to `/login-mobile-mfa`, which calls Auth0's `mfa-otp` grant.
+- **Enrollment on mobile**: First-login enrollment must be completed once via the desktop flow (or via the user's Auth0 account portal). After that, the same TOTP secret works on both platforms.
+
 ### Canvas Signature Verification
 
 Every `POST /` from Salesforce is verified by recomputing the HMAC-SHA256 of the base64-encoded envelope using `CANVAS_CONSUMER_SECRET` and comparing it to the signature prefix in `signed_request`. Requests that fail this check are rejected immediately.
 
-The same verification is applied in `POST /login-mobile` and `POST /updateAccount` when the `signed_request` arrives via form body, ensuring the envelope cannot be tampered with by the client.
+The same verification is applied in `POST /login-mobile`, `POST /login-mobile-mfa`, and `POST /updateAccount` when the `signed_request` arrives via form body, ensuring the envelope cannot be tampered with by the client.
 
 ### CSRF Protection
 
@@ -219,6 +311,7 @@ The mobile flow intentionally avoids relying on server-side sessions. The Canvas
 
 - The session secret is read from `SESSION_SECRET` in the environment. Generate a strong value with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 - Auth0 credentials and the Canvas consumer secret are never exposed to the client.
+- The `mfa_token` returned by Auth0's `mfa_required` response is passed to the client only long enough to complete the TOTP exchange — it is never persisted server-side.
 - Auth0 `error_description` values are logged server-side only; the client always receives a generic error message.
 
 ---
@@ -237,9 +330,24 @@ After `POST /login-mobile` succeeds, the app renders `index.ejs` in the same POS
 
 Since session state is unavailable, the Canvas envelope (containing the Salesforce OAuth token, instance URL, and record context) must travel with the user through the entire interaction. It is embedded as a hidden field in every HTML form (`login.ejs`, `index.ejs`) and re-validated with HMAC on the server on each submission.
 
-### Why Auth0 Resource Owner Password grant for mobile?
+### Why Auth0 `password-realm` + `mfa-otp` grants for mobile?
 
-The standard OpenID Connect flow requires opening a browser popup or redirect, which is unreliable inside Salesforce's Cordova/WKWebView container on mobile. The Resource Owner Password grant allows credentials to be submitted directly from a form inside the WebView without any popup or external navigation.
+The standard OpenID Connect (Authorization Code) flow redirects the iframe to Auth0's hosted login page. Auth0 sets `X-Frame-Options: DENY` on those pages to prevent clickjacking, which makes them unrenderable inside the Salesforce Canvas iframe — the user sees a blank screen.
+
+The PKCE flow with `target="_top"` would break out of the iframe but would also navigate the user away from Salesforce entirely, which is unacceptable UX.
+
+The solution is to call Auth0's REST API directly:
+
+1. **`http://auth0.com/oauth/grant-type/password-realm`** — submits username/password to Auth0 with `audience: https://{domain}/mfa/`. When MFA policy is "Always", Auth0 returns `mfa_required` with an `mfa_token`.
+2. **`http://auth0.com/oauth/grant-type/mfa-otp`** — exchanges the `mfa_token` plus the user's 6-digit TOTP code for an `access_token`, `refresh_token`, and `id_token`.
+
+This keeps the entire login flow (credentials → MFA challenge → app render) inside the Canvas iframe via AJAX. No iframe navigation. No popups. No X-Frame-Options issues.
+
+### Why `document.write()` to render the app after login?
+
+`window.location.reload()` inside a Canvas iframe issues a `GET /` request, but Salesforce Canvas only delivers the signed_request via the original `POST /`. A reload would arrive without context.
+
+Instead, after `/login-mobile-mfa` succeeds, the server renders `index.ejs` to an HTML string and returns it in the JSON response. The client then calls `document.open()` + `document.write(html)` + `document.close()` to replace the iframe contents in-place, preserving the original Canvas context without making a new request.
 
 ### Why is the Canvas envelope manually saved and restored in `/callback`?
 
