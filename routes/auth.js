@@ -5,7 +5,6 @@ var OpenIDConnectStrategy = require('passport-openidconnect');
 var csrf = require('csurf');
 var db = require('../db');
 var axios = require("axios").default;
-var crypto = require('crypto');
 var { decodeSignedRequest } = require('../lib/canvas');
 var { getAccountName } = require('../lib/salesforce');
 
@@ -45,178 +44,162 @@ router.get('/login',
   })
 );
 
-// PKCE-based login start for mobile (Authorization Code + PKCE)
-router.get('/login-mobile-start', function(req, res) {
-  // Debug: Check if AUTH0_MOBILE_CLIENT_ID is set
-  if (!process.env.AUTH0_MOBILE_CLIENT_ID) {
-    console.error('/login-mobile-start - AUTH0_MOBILE_CLIENT_ID not set in environment');
-    return res.status(500).send('Server configuration error: AUTH0_MOBILE_CLIENT_ID not set');
-  }
-  console.log('/login-mobile-start - Using mobile client ID:', process.env.AUTH0_MOBILE_CLIENT_ID.substring(0, 10) + '...');
+// Helper: render the app to HTML and return as JSON for AJAX-based mobile flow
+async function renderAppWithTokens(req, res, envelope, tokens) {
+  const { access_token, refresh_token } = tokens;
 
-  // Decode Canvas envelope from query string or session
-  let envelope = null;
-  if (req.query.signed_request) {
-    envelope = decodeSignedRequest(req.query.signed_request, process.env.CANVAS_CONSUMER_SECRET);
-  } else if (req.session.envelope) {
-    envelope = req.session.envelope;
-  }
+  try {
+    // Fetch user info from Auth0
+    const userRes = await axios.get(`https://${process.env.AUTH0_DOMAIN}/userinfo`, {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
 
-  if (!envelope) {
-    return res.status(400).send('Missing or invalid signed_request');
-  }
+    const profile = {
+      id: userRes.data.sub,
+      username: userRes.data.nickname || userRes.data.name,
+      displayName: userRes.data.name,
+      email: userRes.data.email
+    };
 
-  // Generate PKCE parameters
-  const code_verifier = crypto.randomBytes(32).toString('base64url');
-  const code_challenge = crypto.createHash('sha256').update(code_verifier).digest('base64url');
-  const state = crypto.randomBytes(32).toString('base64url');
+    const userEmail = envelope.context.user.email;
+    const now = Math.floor(Date.now() / 1000);
 
-  // Store PKCE state server-side with 10-minute TTL
-  const created_at = Math.floor(Date.now() / 1000);
-  db.run(
-    `INSERT INTO pkce_state (state, code_verifier, envelope, created_at) VALUES (?, ?, ?, ?)`,
-    [state, code_verifier, JSON.stringify(envelope), created_at],
-    function(err) {
-      if (err) {
-        console.error('/login-mobile-start - db error: ' + err);
-        return res.status(500).send('Failed to initiate login');
-      }
-
-      // Redirect to Auth0 /authorize with PKCE parameters
-      const authorizeUrl = new URL(`https://${process.env.AUTH0_DOMAIN}/authorize`);
-      authorizeUrl.searchParams.set('response_type', 'code');
-      authorizeUrl.searchParams.set('client_id', process.env.AUTH0_MOBILE_CLIENT_ID);
-      authorizeUrl.searchParams.set('redirect_uri', `${process.env.URL}/callback`);
-      authorizeUrl.searchParams.set('scope', 'openid profile email offline_access');
-      authorizeUrl.searchParams.set('code_challenge', code_challenge);
-      authorizeUrl.searchParams.set('code_challenge_method', 'S256');
-      authorizeUrl.searchParams.set('state', state);
-      authorizeUrl.searchParams.set('prompt', 'login');  // Force Auth0 to show login form (critical for WKWebView)
-      authorizeUrl.searchParams.set('connection', process.env.AUTH0_CONNECTION || 'Username-Password-Authentication');  // Required for Native apps
-
-      console.log('/login-mobile-start - Redirecting to Auth0:', authorizeUrl.toString());
-      res.redirect(authorizeUrl.toString());
+    // Store refresh token for silent re-auth
+    if (refresh_token) {
+      db.run(
+        `INSERT OR REPLACE INTO refresh_tokens (email, auth0_user_id, refresh_token, created_at) VALUES (?, ?, ?, ?)`,
+        [userEmail, profile.id, refresh_token, now],
+        function(err) {
+          if (err) console.error('renderAppWithTokens - refresh token store error: ' + err);
+        }
+      );
     }
-  );
-});
 
-// POST /login-mobile (Resource Owner Password Grant) removed in favor of
-// GET /login-mobile-start (Authorization Code + PKCE). See feat/auth0-mfa-pkce-mobile
-// for migration rationale: ROPG is deprecated, cannot support MFA properly in WKWebView.
-
-router.get('/callback', async function(req, res, next) {
-  const state = req.query.state;
-  const code = req.query.code;
-
-  // Check if this is a mobile PKCE callback by looking for state in pkce_state table
-  if (state && code) {
-    db.get(
-      `SELECT code_verifier, envelope, created_at FROM pkce_state WHERE state = ?`,
-      [state],
-      async function(err, row) {
-        if (err) {
-          console.error('/callback - PKCE state lookup error: ' + err);
-          return res.status(500).send('Authentication failed');
-        }
-
-        if (!row) {
-          // Not a mobile PKCE flow, fall through to web Passport flow
-          return handleWebCallback(req, res, next);
-        }
-
-        // Mobile PKCE flow
-        const code_verifier = row.code_verifier;
-        const envelope = JSON.parse(row.envelope);
-        const created_at = row.created_at;
-        const now = Math.floor(Date.now() / 1000);
-
-        // Check TTL (10 minutes)
-        if (now - created_at > 600) {
-          db.run(`DELETE FROM pkce_state WHERE state = ?`, [state]);
-          return res.status(400).send('Login expired. Please try again.');
-        }
-
-        try {
-          // Exchange authorization code for tokens
-          const tokenRes = await axios.post(`https://${process.env.AUTH0_DOMAIN}/oauth/token`, {
-            grant_type: 'authorization_code',
-            code: code,
-            code_verifier: code_verifier,
-            client_id: process.env.AUTH0_MOBILE_CLIENT_ID,
-            redirect_uri: `${process.env.URL}/callback`
-          });
-
-          const { access_token, refresh_token, id_token } = tokenRes.data;
-
-          // Fetch user info
-          const userRes = await axios.get(`https://${process.env.AUTH0_DOMAIN}/userinfo`, {
-            headers: { Authorization: `Bearer ${access_token}` }
-          });
-
-          const profile = {
-            id: userRes.data.sub,
-            username: userRes.data.nickname || userRes.data.name,
-            displayName: userRes.data.name,
-            email: userRes.data.email
-          };
-
-          // Store refresh token for silent re-auth
-          if (refresh_token) {
-            const userEmail = envelope.context.user.email;
-            db.run(
-              `INSERT OR REPLACE INTO refresh_tokens (email, auth0_user_id, refresh_token, created_at) VALUES (?, ?, ?, ?)`,
-              [userEmail, profile.id, refresh_token, now],
-              function(err) {
-                if (err) console.error('/callback - refresh token store error: ' + err);
-              }
-            );
-          }
-
-          // Also update legacy store table for backwards compatibility
-          db.run(
-            `INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
-            [envelope.context.user.email, profile.id],
-            function(err) {
-              if (err) console.error('/callback - store update error: ' + err);
-            }
-          );
-
-          // Delete PKCE state
-          db.run(`DELETE FROM pkce_state WHERE state = ?`, [state]);
-
-          // Render app directly (mobile WKWebView doesn't maintain session cookies)
-          const csrfProtectionInstance = csrf({ cookie: true });
-          csrfProtectionInstance(req, res, async function() {
-            try {
-              const recordId = envelope.context.environment.record.Id;
-              const accountName = await getAccountName(recordId, envelope);
-              res.render('index', {
-                recordId,
-                accountName,
-                signedRequestJson: envelope,
-                signedRequest: req.query.signed_request || '',
-                csrfToken: req.csrfToken()
-              });
-            } catch (renderErr) {
-              console.error('/callback - mobile render error: ' + renderErr);
-              res.status(500).send('Login succeeded but failed to load app');
-            }
-          });
-        } catch (tokenErr) {
-          console.error('/callback - token exchange error: ' + (tokenErr.response?.data || tokenErr.message));
-          db.run(`DELETE FROM pkce_state WHERE state = ?`, [state]);
-          res.status(400).send('Authentication failed. Please try again.');
-        }
+    // Update legacy store table
+    db.run(
+      `INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)`,
+      [userEmail, profile.id],
+      function(err) {
+        if (err) console.error('renderAppWithTokens - store update error: ' + err);
       }
     );
-  } else {
-    // Web Passport flow
-    handleWebCallback(req, res, next);
+
+    // Render index.ejs to HTML string and return as JSON
+    const csrfProtectionInstance = csrf({ cookie: true });
+    csrfProtectionInstance(req, res, async function() {
+      try {
+        const recordId = envelope.context.environment.record.Id;
+        const accountName = await getAccountName(recordId, envelope);
+        res.render('index', {
+          recordId,
+          accountName,
+          signedRequestJson: envelope,
+          signedRequest: req.body.signed_request || '',
+          csrfToken: req.csrfToken()
+        }, function(err, html) {
+          if (err) {
+            console.error('renderAppWithTokens - render error:', err);
+            return res.status(500).json({ error: 'Failed to render app' });
+          }
+          res.json({ success: true, html: html });
+        });
+      } catch (renderErr) {
+        console.error('renderAppWithTokens - error:', renderErr);
+        res.status(500).json({ error: 'Login succeeded but failed to load app' });
+      }
+    });
+  } catch (err) {
+    console.error('renderAppWithTokens - userinfo error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Failed to fetch user info' });
+  }
+}
+
+// POST /login-mobile - First step of mobile login: email + password
+// Returns mfa_required if MFA is needed (always, since policy is "Always")
+router.post('/login-mobile', async function(req, res) {
+  // Decode Canvas envelope from request body
+  let envelope = null;
+  if (req.body.signed_request) {
+    envelope = decodeSignedRequest(req.body.signed_request, process.env.CANVAS_CONSUMER_SECRET);
+  }
+  if (!envelope) {
+    return res.status(400).json({ error: 'Missing or invalid signed_request' });
+  }
+
+  try {
+    // Call Auth0 /oauth/token with password-realm grant
+    // audience=https://{domain}/mfa/ is required to enable MFA grant types
+    const tokenRes = await axios.post(`https://${process.env.AUTH0_DOMAIN}/oauth/token`, {
+      grant_type: 'http://auth0.com/oauth/grant-type/password-realm',
+      username: req.body.email,
+      password: req.body.password,
+      realm: process.env.AUTH0_CONNECTION || 'Username-Password-Authentication',
+      scope: 'openid profile email offline_access',
+      client_id: process.env.AUTH0_CLIENT_ID,
+      client_secret: process.env.AUTH0_CLIENT_SECRET,
+      audience: `https://${process.env.AUTH0_DOMAIN}/mfa/`
+    });
+
+    // Login succeeded without MFA (only if MFA policy is not "Always")
+    return await renderAppWithTokens(req, res, envelope, tokenRes.data);
+
+  } catch (err) {
+    const errorData = err.response?.data || {};
+
+    // Check if Auth0 is asking for MFA
+    if (errorData.error === 'mfa_required') {
+      console.log('/login-mobile - MFA required for user:', req.body.email);
+      return res.json({
+        mfa_required: true,
+        mfa_token: errorData.mfa_token
+      });
+    }
+
+    // Other errors (invalid credentials, etc.)
+    console.error('/login-mobile - auth error:', errorData.error_description || err.message);
+    return res.status(401).json({ error: errorData.error_description || 'Invalid email or password' });
   }
 });
 
-// Web callback handler (existing Passport flow)
-function handleWebCallback(req, res, next) {
+// POST /login-mobile-mfa - Second step of mobile login: TOTP code
+router.post('/login-mobile-mfa', async function(req, res) {
+  // Decode Canvas envelope from request body
+  let envelope = null;
+  if (req.body.signed_request) {
+    envelope = decodeSignedRequest(req.body.signed_request, process.env.CANVAS_CONSUMER_SECRET);
+  }
+  if (!envelope) {
+    return res.status(400).json({ error: 'Missing or invalid signed_request' });
+  }
+
+  if (!req.body.mfa_token || !req.body.otp) {
+    return res.status(400).json({ error: 'Missing mfa_token or otp' });
+  }
+
+  try {
+    // Exchange mfa_token + otp for access_token
+    const tokenRes = await axios.post(`https://${process.env.AUTH0_DOMAIN}/oauth/token`, {
+      grant_type: 'http://auth0.com/oauth/grant-type/mfa-otp',
+      mfa_token: req.body.mfa_token,
+      otp: req.body.otp,
+      client_id: process.env.AUTH0_CLIENT_ID,
+      client_secret: process.env.AUTH0_CLIENT_SECRET
+    });
+
+    return await renderAppWithTokens(req, res, envelope, tokenRes.data);
+  } catch (err) {
+    const errorData = err.response?.data || {};
+    console.error('/login-mobile-mfa - error:', errorData.error_description || err.message);
+
+    if (errorData.error === 'invalid_grant' && errorData.error_description?.includes('expired')) {
+      return res.status(401).json({ error: 'MFA session expired. Please log in again.', expired: true });
+    }
+
+    return res.status(401).json({ error: errorData.error_description || 'Invalid TOTP code' });
+  }
+});
+
+router.get('/callback', function(req, res, next) {
   // Capture envelope before Passport regenerates the session (session fixation prevention).
   const savedEnvelope = req.session.envelope;
 
@@ -235,7 +218,7 @@ function handleWebCallback(req, res, next) {
       });
     });
   })(req, res, next);
-}
+});
 
 router.get('/auth-success', function(req, res) {
   const envelope = req.session.envelope;
