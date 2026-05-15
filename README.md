@@ -17,30 +17,72 @@ The app supports two authentication paths, **both requiring Multi-Factor Authent
 
 ## Architecture
 
-```
-Salesforce Canvas
-      │
-      │  POST / (signed_request)
-      ▼
-  Express App (app.js)
-      │
-      ├── HMAC verify signed_request
-      ├── Decode Canvas envelope
-      │
-      ├── [User known in DB] ──► render index.ejs directly
-      │
-      └── [User unknown] ──► render login.ejs
-                                  │
-                    ┌─────────────┴─────────────┐
-                    │                           │
-               Desktop                       Mobile (in iframe)
-            GET /login                  POST /login-mobile (AJAX)
-         (Auth0 popup)              ↓ password-realm grant
-                    │              [mfa_required → show TOTP input]
-                    │              POST /login-mobile-mfa (AJAX)
-                    │              ↓ mfa-otp grant
-            GET /callback           document.write(rendered HTML)
-          GET /auth-success
+```mermaid
+flowchart TB
+    subgraph SF["Salesforce"]
+        Canvas[Canvas App<br/>Visualforce/Lightning]
+    end
+
+    subgraph Express["Express App (Node.js)"]
+        Entry["POST /<br/>(app.js)"]
+        Verify[/"HMAC verify<br/>+ decode envelope"/]
+        Lookup{User in<br/>SQLite store?}
+        IndexView["render index.ejs<br/>(app UI)"]
+        LoginView["render login.ejs"]
+
+        subgraph Desktop["Desktop Flow (browser popup)"]
+            DLogin["GET /login<br/>(Passport)"]
+            DCallback["GET /callback"]
+            DSuccess["GET /auth-success"]
+        end
+
+        subgraph Mobile["Mobile Flow (in-iframe AJAX)"]
+            MLogin["POST /login-mobile<br/>(email + password)"]
+            MMfa["POST /login-mobile-mfa<br/>(TOTP code)"]
+            MRender["document.write<br/>rendered HTML"]
+        end
+
+        DB[(SQLite<br/>store.db<br/>sessions.db)]
+    end
+
+    subgraph Auth0
+        AuthZ["/authorize<br/>+ /oauth/token<br/>+ /userinfo"]
+        MFA["MFA Policy: Always<br/>TOTP factor"]
+    end
+
+    Canvas -->|"signed_request"| Entry
+    Entry --> Verify
+    Verify --> Lookup
+    Lookup -->|"yes (returning user)"| IndexView
+    Lookup -->|"no (first login)"| LoginView
+
+    LoginView -.->|"desktop click"| DLogin
+    LoginView -.->|"mobile submit"| MLogin
+
+    DLogin -->|"302 redirect"| AuthZ
+    AuthZ -->|"code + state"| DCallback
+    DCallback -->|"token exchange"| AuthZ
+    DCallback --> DSuccess
+    DSuccess -->|"postMessage<br/>reload parent"| Canvas
+
+    MLogin -->|"grant: password-realm"| AuthZ
+    AuthZ -->|"mfa_required + mfa_token"| MLogin
+    MLogin -.->|"show TOTP input"| MMfa
+    MMfa -->|"grant: mfa-otp"| AuthZ
+    AuthZ -->|"access_token + refresh_token"| MMfa
+    MMfa --> MRender
+
+    Express -.->|"persist user mapping"| DB
+    AuthZ -.-> MFA
+
+    classDef sfStyle fill:#00A1E0,stroke:#005A8B,color:#fff
+    classDef exprStyle fill:#68A063,stroke:#3C763D,color:#fff
+    classDef authStyle fill:#EB5424,stroke:#A0341A,color:#fff
+    classDef dbStyle fill:#003B57,stroke:#001F2E,color:#fff
+    class Canvas sfStyle
+    class Entry,Verify,Lookup,IndexView,LoginView,DLogin,DCallback,DSuccess,MLogin,MMfa,MRender exprStyle
+    class AuthZ,MFA authStyle
+    class DB dbStyle
 ```
 
 **Key design constraint**: The Salesforce Canvas `POST /` is issued by Salesforce's infrastructure, not by the user's WKWebView. The `Set-Cookie` response header therefore never reaches the mobile browser's cookie jar. The entire mobile flow is **stateless with respect to session cookies** — all necessary context travels through hidden form fields (`signed_request`) and is re-validated on every request.
